@@ -9,7 +9,7 @@
  * Erzeugt wird nur auf Knopfdruck (kostet einen KI-Aufruf); beim Öffnen wird
  * die letzte Analyse für Symbol und Zeiteinheit gelesen, falls es eine gibt.
  */
-import { ref, watch } from 'vue'
+import { ref, watch, computed } from 'vue'
 import { useI18n } from 'vue-i18n'
 import axios from 'axios'
 import { linieAlsZeichnung, zoneAlsZeichnung } from '../../utils/chart/kiZeichnungen.js'
@@ -33,6 +33,21 @@ const MODUS_SCHLUESSEL = 'chartKiModus'
 function leseModus() { try { return localStorage.getItem(MODUS_SCHLUESSEL) === 'chat' ? 'chat' : 'analyse' } catch { return 'analyse' } }
 const modus = ref(leseModus())
 function setzeModus(m) { modus.value = m; try { localStorage.setItem(MODUS_SCHLUESSEL, m) } catch { /* kein Speicher */ } }
+
+/*
+ * Was die Analyse liefern soll (Kästchen) — eine Vorliebe, kein Layout-Teil,
+ * daher im Browser gemerkt. Abgewähltes bekommt die KI gar nicht zu sehen.
+ */
+const OPTIONEN = ['niveaus', 'trend', 'zonen', 'volumen', 'htf', 'bedingungen', 'hebel']
+const optionen = ref((() => {
+    const a = Object.fromEntries(OPTIONEN.map((k) => [k, true]))
+    try { Object.assign(a, JSON.parse(localStorage.getItem('chartKiOptionen') || '{}')) } catch { /* Vorgabe */ }
+    return a
+})())
+watch(optionen, (v) => { try { localStorage.setItem('chartKiOptionen', JSON.stringify(v)) } catch { /* kein Speicher */ } }, { deep: true })
+const keineQuelle = computed(() => !optionen.value.niveaus && !optionen.value.trend && !optionen.value.volumen && !optionen.value.htf)
+// Zonen entstehen aus Niveaus, Volumenprofil oder höherer Zeiteinheit
+const zonenMoeglich = computed(() => optionen.value.niveaus || optionen.value.volumen || optionen.value.htf)
 
 const analyse = ref(null)
 const laeuft = ref(false)
@@ -69,7 +84,10 @@ async function erstelle() {
     fehler.value = ''
     const beginn = Date.now()
     try {
-        const { data } = await axios.post('/api/chart/ki-analyse', { symbol: props.panel.symbol, interval: props.panel.interval, markt: props.panel.markt })
+        const { data } = await axios.post('/api/chart/ki-analyse', {
+            symbol: props.panel.symbol, interval: props.panel.interval, markt: props.panel.markt,
+            auswahl: { ...optionen.value, zonen: optionen.value.zonen && zonenMoeglich.value },
+        })
         // Inzwischen anderes Symbol: verwerfen. Der Server hat sie abgelegt — zurück
         // auf dem alten Symbol zeigt der Reiter sie wieder, ohne neu zu bezahlen.
         if (meine !== nr || fuer !== stand()) return
@@ -170,10 +188,17 @@ watch(() => [props.panel.symbol, props.panel.interval, props.panel.markt], ladeL
         </div>
         <KiChat v-if="modus === 'chat'" class="chatFlaeche" :panel="panel" :sichtbar-bis="sichtbarBis" />
         <template v-else>
-        <button class="btn btn-sm btn-outline-primary" :disabled="laeuft" @click="erstelle">
+        <button class="btn btn-sm btn-outline-primary" :disabled="laeuft || keineQuelle" @click="erstelle">
             <span v-if="laeuft" class="spinner-border spinner-border-sm"></span>
             <template v-else><i class="uil uil-robot"></i> {{ t('chart.ki.erstellen', { symbol: panel.symbol, tf: panel.interval }) }}</template>
         </button>
+        <div class="optionen">
+            <label v-for="o in OPTIONEN" :key="o" class="option" :class="{ aus: o === 'zonen' && !zonenMoeglich }" :title="t('chart.ki.optTipp.' + o)">
+                <input v-model="optionen[o]" type="checkbox" class="form-check-input" :disabled="o === 'zonen' && !zonenMoeglich" />
+                {{ t('chart.ki.opt.' + o) }}
+            </label>
+        </div>
+        <div v-if="keineQuelle" class="fehler">{{ t('chart.ki.optLeer') }}</div>
         <div class="hinweis">{{ t('chart.ki.hinweis') }}</div>
         <div v-if="fehler" class="fehler">{{ fehler }}</div>
 
@@ -237,6 +262,33 @@ watch(() => [props.panel.symbol, props.panel.interval, props.panel.markt], ladeL
 
 .kiReiter:has(.chatFlaeche) {
     overflow: hidden;
+}
+
+.optionen {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 2px 10px;
+    flex-shrink: 0;
+}
+
+.option {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    font-size: 11px;
+    color: var(--white-87, #ddd);
+    cursor: pointer;
+    white-space: nowrap;
+}
+
+.option input {
+    margin: 0;
+    width: 12px;
+    height: 12px;
+}
+
+.option.aus {
+    opacity: 0.45;
 }
 
 .struktur {

@@ -5391,7 +5391,26 @@
         "ab": ", last break below {p} on {zeit}"
       },
       "kandidatenZeigen": "show all candidates",
-      "kandidatenAus": "show selection only"
+      "kandidatenAus": "show selection only",
+      "opt": {
+        "niveaus": "Levels",
+        "trend": "Trend lines",
+        "zonen": "Zones",
+        "volumen": "Volume profile",
+        "htf": "Higher timeframe",
+        "bedingungen": "Conditions",
+        "hebel": "Liquidation zones"
+      },
+      "optTipp": {
+        "niveaus": "Horizontal support and resistance from clustered highs and lows (N…)",
+        "trend": "Unbroken trend lines at highs or lows (T…)",
+        "zonen": "Areas instead of single lines (from levels, volume profile or higher timeframe)",
+        "volumen": "Point of control and value area of the range (V…)",
+        "htf": "Marks of the next higher timeframe, e.g. 1d for a 4h chart (D…)",
+        "bedingungen": "If/then sentences at a mark (\"4h close above …\")",
+        "hebel": "Estimated liquidation zones from open interest as context for the AI"
+      },
+      "optLeer": "Choose at least levels, trend lines, volume profile or higher timeframe."
     },
     "indAktiv": "Active in this chart",
     "indHinzu": "Add",

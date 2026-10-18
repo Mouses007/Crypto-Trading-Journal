@@ -5391,7 +5391,26 @@
         "ab": ", letzter Bruch unter {p} am {zeit}"
       },
       "kandidatenZeigen": "alle Kandidaten zeigen",
-      "kandidatenAus": "nur Auswahl zeigen"
+      "kandidatenAus": "nur Auswahl zeigen",
+      "opt": {
+        "niveaus": "Niveaus",
+        "trend": "Trendlinien",
+        "zonen": "Zonen",
+        "volumen": "Volumenprofil",
+        "htf": "Höhere Zeiteinheit",
+        "bedingungen": "Bedingungen",
+        "hebel": "Liquidationszonen"
+      },
+      "optTipp": {
+        "niveaus": "Waagerechte Unterstützungen und Widerstände aus geclusterten Hochs und Tiefs (N…)",
+        "trend": "Ungebrochene Trendlinien an Hochs bzw. Tiefs (T…)",
+        "zonen": "Bereiche statt einzelner Linien (aus Niveaus, Volumenprofil oder höherer Zeiteinheit)",
+        "volumen": "Point of Control und Value Area des Bereichs (V…)",
+        "htf": "Marken der nächsthöheren Zeiteinheit, z. B. 1d für einen 4h-Chart (D…)",
+        "bedingungen": "Wenn-dann-Sätze an einer Marke („4h-Schluss über …\")",
+        "hebel": "Geschätzte Liquidationszonen aus Open Interest als Kontext für die KI"
+      },
+      "optLeer": "Mindestens Niveaus, Trendlinien, Volumenprofil oder höhere Zeiteinheit wählen."
     },
     "indAktiv": "Aktiv in diesem Chart",
     "indHinzu": "Hinzufügen",

@@ -9,7 +9,7 @@
  * Format kommt nicht durch. Zu streng frisst es bezahlte, gute Auswahl — für
  * jede Ablehnung steht deshalb eine Gegenprobe daneben, die durchgehen MUSS.
  */
-import { baueChartEingabe, pruefeChartAuswahl, systemText } from './chart-ki.js'
+import { baueChartEingabe, pruefeChartAuswahl, systemText, normAuswahl, filterePaket, auswahlLeer } from './chart-ki.js'
 
 let bestanden = 0
 let fehlgeschlagen = 0
@@ -136,6 +136,22 @@ console.log('\nAuswahl abbilden\n')
     const zahl = pruefeChartAuswahl({ linien: [{ id: 'N2', label: 'a', grund: 'Abpraller bei 160' }, { id: 'N4', label: 'b', grund: 'Tief bei 98,1' }] }, paket)
     check('fremde Zahl im Grund → Warnung (nur protokolliert)', zahl.warnungen.some((w) => w.zahl === 160) && zahl.linien.length === 2)
     check('Gegenprobe: Zahl 0,1 neben N4 ohne Warnung', !zahl.warnungen.some((w) => Math.abs(w.zahl - 98.1) < 1e-9))
+}
+
+console.log('\nAuswahl (Kästchen im Reiter)\n')
+{
+    check('ohne Angabe: alles an', Object.values(normAuswahl(null)).every(Boolean))
+    check('ohne Niveaus, Volumenprofil und höhere Zeiteinheit gibt es keine Zonen', normAuswahl({ niveaus: false, volumen: false, htf: false }).zonen === false)
+    check('nur Zonen ohne Quellen → leer (Knopf gesperrt)', auswahlLeer(normAuswahl({ niveaus: false, trend: false, volumen: false, htf: false })))
+    const nurTrend = filterePaket(paket, normAuswahl({ niveaus: false, volumen: false, htf: false }))
+    check('Paket ohne Niveaus/V/D enthält nur noch Trendlinien', nurTrend.kandidaten.every((k) => k.quelle === 'trend') && nurTrend.kandidaten.length === 1)
+    const sys = systemText(false, false, normAuswahl({ zonen: false, bedingungen: false, trend: false }))
+    check('System ohne Zonen/Bedingungen sagt es und nennt T nicht als Linie', sys.includes('Keine Zonen') && sys.includes('Keine Bedingungen') && !sys.includes('T (Trendlinie)'))
+    check('Gegenprobe: Standard-System nennt Zonen und Bedingungen', systemText(false, false).includes('"ids"') && systemText(false, false).includes('"richtung"'))
+    const ohne = pruefeChartAuswahl({ linien: [{ id: 'N2', label: 'a' }], zonen: [{ ids: ['N5'], label: 'z' }], bedingungen: [{ id: 'N2', richtung: 'ueber', dann: 'x' }] }, paket, { auswahl: { zonen: false, bedingungen: false } })
+    check('abgewählte Zonen und Bedingungen werden nicht übernommen, auch wenn das Modell sie liefert', ohne.zonen.length === 0 && ohne.bedingungen.length === 0 && ohne.linien.length === 1)
+    const ohneHebel = baueChartEingabe({ symbol: 'X', interval: '1h', kerzen, hebelzonen: null })
+    check('Liquidationszonen abgewählt → nicht in der Eingabe', !ohneHebel.includes('LIQUIDATIONSZONEN'))
 }
 
 console.log('\nWächter\n')

@@ -73,28 +73,62 @@ export function baueChartEingabe({ symbol, interval, kerzen, kerzenHtf = null, z
     return zeilen.join('\n')
 }
 
-export function systemText(englisch, empfehlungen) {
+/*
+ * Was die Analyse liefern soll — Kästchen im KI-Reiter. Abgewählte Quellen
+ * kommen gar nicht erst in die Eingabe: das Modell kann sie weder wählen noch
+ * erfinden, und die Eingabe wird kürzer.
+ */
+export const AUSWAHL_STANDARD = { niveaus: true, trend: true, zonen: true, volumen: true, htf: true, bedingungen: true, hebel: true }
+const QUELLE_ZU_AUSWAHL = { niveau: 'niveaus', trend: 'trend', volumenprofil: 'volumen', htf: 'htf' }
+
+export function normAuswahl(roh) {
+    const a = { ...AUSWAHL_STANDARD }
+    if (roh && typeof roh === 'object') for (const k of Object.keys(a)) if (roh[k] !== undefined) a[k] = roh[k] !== false
+    // Zonen entstehen aus Niveaus (N) oder Marken der höheren Zeiteinheit (D)
+    if (!a.niveaus && !a.htf && !a.volumen) a.zonen = false
+    return a
+}
+export const auswahlLeer = (a) => !a.niveaus && !a.trend && !a.volumen && !a.htf
+
+/** Paket auf die gewählten Quellen beschränken (rein). */
+export function filterePaket(paket, a) {
+    if (!paket) return paket
+    return { ...paket, kandidaten: paket.kandidaten.filter((k) => a[QUELLE_ZU_AUSWAHL[k.quelle]] !== false) }
+}
+
+export function systemText(englisch, empfehlungen, auswahl = AUSWAHL_STANDARD) {
+    const a = normAuswahl(auswahl)
     const sprache = englisch ? 'Write all texts in English.' : 'Schreibe alle Texte auf Deutsch.'
-    return `Du bist ein nüchterner technischer Analyst. Der Code hat den Chart bereits vermessen: Niveaus (N…), Volumenprofil-Marken (V…), ungebrochene Trendlinien (T…), Marken der höheren Zeiteinheit (D…), Marktstruktur und Spanne. Jede Marke ist an den Kerzen geprüft. Deine Aufgabe: AUSWÄHLEN, GEWICHTEN, ERKLÄREN — nicht vermessen.
+    const quellen = [a.niveaus && 'Niveaus (N…)', a.volumen && 'Volumenprofil-Marken (V…)', a.trend && 'ungebrochene Trendlinien (T…)', a.htf && 'Marken der höheren Zeiteinheit (D…)'].filter(Boolean).join(', ')
+    const waagerecht = [a.niveaus && 'N', a.volumen && 'V', a.htf && 'D'].filter(Boolean)
+    const linienIds = [...waagerecht.length ? [`${waagerecht.join(', ')} (waagerecht)`] : [], ...a.trend ? ['T (Trendlinie)'] : []].join(' oder ')
+    const regeln = [
+        '- Verwende NUR IDs aus der Liste. Erfinde keine Preise, keine Zeiten, keine Linien. Eine Marke, die nicht in der Liste steht, gibt es nicht. U-IDs (eigene Linien) darfst du nur im Text erwähnen, nicht auswählen.',
+        `- Im Text, in "grund"${a.bedingungen ? ' und "dann"' : ''} schreibst du Marken als [ID] (z. B. [N4], [T1]); der Code setzt den Preis ein. Schreibe keine eigenen Kurszahlen.`,
+        `- Linien: "id" aus ${linienIds}. Wähle, was ein erfahrener Trader einzeichnen würde: nahe am Kurs, mehrfach berührt, deutliche Reaktion, wenig Durchquerungen. Mindestens je eine Marke über und unter dem Kurs, sofern vorhanden.`,
+        a.zonen ? '- Zonen: "ids" mit einer ID (deren Band) oder zwei benachbarten N/D-IDs (Bereich dazwischen). Nur wo der Kurs mehrfach reagiert hat. Eine Marke ist entweder Linie oder Zone, nicht beides.' : '- Keine Zonen — der Nutzer möchte nur Linien. Gib "zonen": [] zurück.',
+        '- Gewicht: "stark" nur bei ≥ 3 Berührungen oder Übereinstimmung zweier Quellen (z. B. N und T, N und V oder N und D nahe beieinander). Nenne die Übereinstimmung im Grund.',
+        a.niveaus ? '- Niveaus mit vielen Durchquerungen sind Drehpunkte der Spanne, keine harte Grenze — sag das.' : null,
+        a.bedingungen ? '- Bedingungen: an eine ID gebunden; "richtung" ueber/unter meint einen Schluss der Zeiteinheit jenseits der Marke; "ziel" (optional) ist die nächste ID in dieser Richtung.' : '- Keine Bedingungen. Gib "bedingungen": [] zurück.',
+        '- Stütze dich NUR auf die Eingabe. Keine Nachrichten, kein Allgemeinwissen über den Coin.',
+        empfehlungen ? null : `- KEINE Prognose, KEIN Kursziel, KEINE Handelsempfehlung, kein "dürfte", kein "wird steigen/fallen", kein "kaufen/verkaufen".${a.bedingungen ? ' "ziel" ist die nächste Marke, kein Kursziel —' : ''} beschreibe, was ein Bruch bedeuten würde.`,
+        `- Höchstens ${MAX_LINIEN} Linien${a.trend ? ` (davon höchstens ${MAX_TRENDS} Trendlinien)` : ''}${a.zonen ? `, ${MAX_ZONEN} Zonen` : ''}${a.bedingungen ? `, ${MAX_BEDINGUNGEN} Bedingungen` : ''}. Lieber wenige gute.`,
+        '- Beschriftung "label" höchstens 40 Zeichen, "grund" höchstens 200 Zeichen.',
+        `- ${sprache}`,
+    ].filter(Boolean)
+    const schema = [
+        '{"text": "2–4 Sätze zur Lage, Marken als [ID]",',
+        ' "linien": [{"id": "N4", "label": "...", "grund": "...", "gewicht": "stark|mittel|schwach"}],',
+        a.zonen ? ' "zonen": [{"ids": ["N3"], "label": "...", "grund": "...", "gewicht": "stark|mittel|schwach"}],' : ' "zonen": [],',
+        a.bedingungen ? ' "bedingungen": [{"id": "N4", "richtung": "ueber|unter", "dann": "...", "ziel": "N2"}]}' : ' "bedingungen": []}',
+    ]
+    return `Du bist ein nüchterner technischer Analyst. Der Code hat den Chart bereits vermessen: ${quellen}, dazu Marktstruktur und Spanne. Jede Marke ist an den Kerzen geprüft. Deine Aufgabe: AUSWÄHLEN, GEWICHTEN, ERKLÄREN — nicht vermessen.
 
 Regeln:
-- Verwende NUR IDs aus der Liste. Erfinde keine Preise, keine Zeiten, keine Linien. Eine Marke, die nicht in der Liste steht, gibt es nicht. U-IDs (eigene Linien) darfst du nur im Text erwähnen, nicht auswählen.
-- Im Text, in "grund" und "dann" schreibst du Marken als [ID] (z. B. [N4], [T1]); der Code setzt den Preis ein. Schreibe keine eigenen Kurszahlen.
-- Linien: "id" aus N, V, D (waagerecht) oder T (Trendlinie). Wähle, was ein erfahrener Trader einzeichnen würde: nahe am Kurs, mehrfach berührt, deutliche Reaktion, wenig Durchquerungen. Mindestens je eine Marke über und unter dem Kurs, sofern vorhanden.
-- Zonen: "ids" mit einer ID (deren Band) oder zwei benachbarten N/D-IDs (Bereich dazwischen). Nur wo der Kurs mehrfach reagiert hat. Eine Marke ist entweder Linie oder Zone, nicht beides.
-- Gewicht: "stark" nur bei ≥ 3 Berührungen oder Übereinstimmung zweier Quellen (z. B. N und T, N und V oder N und D nahe beieinander). Nenne die Übereinstimmung im Grund.
-- Niveaus mit vielen Durchquerungen sind Drehpunkte der Spanne, keine harte Grenze — sag das.
-- Bedingungen: an eine ID gebunden; "richtung" ueber/unter meint einen Schluss der Zeiteinheit jenseits der Marke; "ziel" (optional) ist die nächste ID in dieser Richtung.
-- Stütze dich NUR auf die Eingabe. Keine Nachrichten, kein Allgemeinwissen über den Coin.
-${empfehlungen ? '' : '- KEINE Prognose, KEIN Kursziel, KEINE Handelsempfehlung, kein "dürfte", kein "wird steigen/fallen", kein "kaufen/verkaufen". "ziel" ist die nächste Marke, kein Kursziel — beschreibe, was ein Bruch bedeuten würde.\n'}- Höchstens ${MAX_LINIEN} Linien (davon höchstens ${MAX_TRENDS} Trendlinien), ${MAX_ZONEN} Zonen, ${MAX_BEDINGUNGEN} Bedingungen. Lieber wenige gute.
-- Beschriftung "label" höchstens 40 Zeichen, "grund" höchstens 200 Zeichen.
-- ${sprache}
+${regeln.join('\n')}
 
 Antworte NUR mit JSON:
-{"text": "2–4 Sätze zur Lage, Marken als [ID]",
- "linien": [{"id": "N4", "label": "...", "grund": "...", "gewicht": "stark|mittel|schwach"}],
- "zonen": [{"ids": ["N3"], "label": "...", "grund": "...", "gewicht": "stark|mittel|schwach"}],
- "bedingungen": [{"id": "N4", "richtung": "ueber|unter", "dann": "...", "ziel": "N2"}]}`
+${schema.join('\n')}`
 }
 
 const idVon = (x) => String(x ?? '').trim().toUpperCase().replace(/^\[|\]$/g, '')
@@ -110,7 +144,8 @@ const ID_RE = /\[([A-Za-z]\d{1,2})\]/g
  * zu keiner Marke passen, kommen nur in `warnungen` (erst beobachten, dann
  * scharf schalten).
  */
-export function pruefeChartAuswahl(json, paket, { empfehlungen = false } = {}) {
+export function pruefeChartAuswahl(json, paket, { empfehlungen = false, auswahl = AUSWAHL_STANDARD } = {}) {
+    const wahl = normAuswahl(auswahl)
     const verworfen = []
     const warnungen = []
     const textOk = (t) => empfehlungen || pruefeEinordnung({ text: t }).ok
@@ -157,7 +192,7 @@ export function pruefeChartAuswahl(json, paket, { empfehlungen = false } = {}) {
     const zonen = []
     const zonenIds = new Set()
     const preisListe = paket.kandidaten.filter((k) => k.quelle === 'niveau' || k.quelle === 'htf').sort((a, b) => a.preis - b.preis)
-    for (const z of Array.isArray(json?.zonen) ? json.zonen : []) {
+    for (const z of wahl.zonen && Array.isArray(json?.zonen) ? json.zonen : []) {
         const ids = (Array.isArray(z?.ids) ? z.ids : [z?.id]).map(idVon).filter(Boolean)
         const label = wort(z?.label, 40)
         const ks = ids.map((id) => karte.get(id))
@@ -207,7 +242,7 @@ export function pruefeChartAuswahl(json, paket, { empfehlungen = false } = {}) {
 
     const bedingungen = []
     const iv = paket.interval || ''
-    for (const b of Array.isArray(json?.bedingungen) ? json.bedingungen : []) {
+    for (const b of wahl.bedingungen && Array.isArray(json?.bedingungen) ? json.bedingungen : []) {
         const id = idVon(b?.id)
         const k = karte.get(id)
         if (!k) { verworfen.push({ art: 'bedingung', grund: 'unbekannteId', inhalt: id }); continue }
@@ -301,11 +336,17 @@ export async function ladeChartDaten({ symbol, interval, markt = 'futures', anza
     }
 }
 
-export async function erzeugeChartAnalyse({ symbol, interval, markt = 'futures' }) {
+export async function erzeugeChartAnalyse({ symbol, interval, markt = 'futures', auswahl = null }) {
+    const wahl = normAuswahl(auswahl)
+    if (auswahlLeer(wahl)) { const e = new Error('Mindestens Niveaus, Trendlinien, Volumenprofil oder höhere Zeiteinheit wählen'); e.status = 400; throw e }
+    const wahlText = JSON.stringify(wahl)
     const schluessel = schluesselVon(symbol, interval, markt)
+    // Der Cache hält die LETZTE Analyse je Chart; die Sperre greift nur bei gleicher Auswahl —
+    // wer ein Kästchen umstellt, will eine andere Analyse, nicht die eben bezahlte.
     const alt = cache.get(schluessel)
-    if (alt && Date.now() - alt.ts < SPERRE_MS) return { ...alt.payload, stand: alt.ts, alterMs: Date.now() - alt.ts, aus: 'sperre' }
-    if (laufend.has(schluessel)) return laufend.get(schluessel)
+    if (alt && Date.now() - alt.ts < SPERRE_MS && JSON.stringify(alt.payload.optionen || AUSWAHL_STANDARD) === wahlText) return { ...alt.payload, stand: alt.ts, alterMs: Date.now() - alt.ts, aus: 'sperre' }
+    const laufSchluessel = `${schluessel}|${wahlText}`
+    if (laufend.has(laufSchluessel)) return laufend.get(laufSchluessel)
     const fehl = fehlschlaege.get(schluessel)
     if (fehl && Date.now() - fehl.ts < SPERRE_MS) {
         const e = new Error(`${fehl.meldung} — nächster Versuch in ${Math.ceil((SPERRE_MS - (Date.now() - fehl.ts)) / 1000)} s`)
@@ -317,13 +358,13 @@ export async function erzeugeChartAnalyse({ symbol, interval, markt = 'futures' 
         const intervalHtf = HTF_VON[interval] || null
         const [{ kerzen, zeichnungen, hebel, trades, englisch, empfehlungen }, kerzenHtf] = await Promise.all([
             ladeChartDaten({ symbol, interval, markt }),
-            intervalHtf ? getClosedCandles(symbol, intervalHtf, HTF_KERZEN, { market: markt }).catch(() => null) : null,
+            intervalHtf && wahl.htf ? getClosedCandles(symbol, intervalHtf, HTF_KERZEN, { market: markt }).catch(() => null) : null,
         ])
         if (kerzen.length < 30) throw new Error('Zu wenige Kerzen für eine Analyse')
         const vonT = kerzen[0].t
         const bisT = kerzen[kerzen.length - 1].t
         // Der Code vermisst, das Modell wählt aus (chart-kandidaten.js).
-        const paket = baueKandidaten({ kerzen, kerzenHtf, interval, intervalHtf, zeichnungen })
+        const paket = filterePaket(baueKandidaten({ kerzen, kerzenHtf: wahl.htf ? kerzenHtf : null, interval, intervalHtf, zeichnungen }), wahl)
         if (!paket) throw new Error('Zu wenige Kerzen für eine Vermessung')
 
         const cfg = await ladeLlmConfigFuerAufgabe('chart-analyse')
@@ -332,8 +373,8 @@ export async function erzeugeChartAnalyse({ symbol, interval, markt = 'futures' 
         // Inhalt bei voller Rechnung — deshalb grosszügig, und bei
         // abgeschnittenem JSON einmal mit doppeltem Deckel.
         cfg.maxTokens = 3000
-        const system = systemText(englisch, empfehlungen)
-        const user = baueChartEingabe({ symbol, interval, paket, hebelzonen: hebel, trades })
+        const system = systemText(englisch, empfehlungen, wahl)
+        const user = baueChartEingabe({ symbol, interval, paket, hebelzonen: wahl.hebel ? hebel : null, trades })
         const buchung = { zweck: 'chart-analyse', ausloeser: 'manuell', bezug: { typ: 'symbol', id: symbol } }
         let antwort = await callLLMJson(cfg, { system, user, timeoutMs: 90000, ...buchung })
         // Kosten beider Aufrufe zusammen anzeigen — bei abgeschnittener Antwort wurde der erste auch bezahlt.
@@ -343,20 +384,20 @@ export async function erzeugeChartAnalyse({ symbol, interval, markt = 'futures' 
             antwort = await callLLMJson(cfg, { system, user, timeoutMs: 90000, ...buchung })
             if (antwort.costUsd != null) kosten = (kosten ?? 0) + antwort.costUsd
         }
-        const ergebnis = pruefeChartAuswahl(antwort.json, paket, { empfehlungen })
+        const ergebnis = pruefeChartAuswahl(antwort.json, paket, { empfehlungen, auswahl: wahl })
         for (const v of ergebnis.verworfen) logWarn('chart-ki', `${symbol} ${interval}: ${v.art} verworfen (${v.grund}) — ${v.inhalt}`)
         for (const w of ergebnis.warnungen) logWarn('chart-ki', `${symbol} ${interval}: Zahl ${w.zahl} in ${w.wo} passt zu keiner Marke`)
         if (ergebnis.leer) throw new Error('Die KI hat keine verwertbare Analyse geliefert')
 
         const payload = {
-            symbol, interval, ...ergebnis, kerzenVon: vonT, kerzenBis: bisT, auswahl: kandidatenKurz(paket),
+            symbol, interval, ...ergebnis, kerzenVon: vonT, kerzenBis: bisT, auswahl: kandidatenKurz(paket), optionen: wahl,
             markt, provider: cfg.provider, model: cfg.model, costUsd: kosten,
         }
         cache.set(schluessel, { ts: Date.now(), payload })
         while (cache.size > CACHE_MAX) cache.delete(cache.keys().next().value)
         return { ...payload, stand: Date.now(), alterMs: 0, aus: 'neu' }
     })()
-    laufend.set(schluessel, lauf)
+    laufend.set(laufSchluessel, lauf)
     try {
         const r = await lauf
         fehlschlaege.delete(schluessel)
@@ -364,7 +405,7 @@ export async function erzeugeChartAnalyse({ symbol, interval, markt = 'futures' 
     } catch (e) {
         if (e.status !== 429) fehlschlaege.set(schluessel, { ts: Date.now(), meldung: e.message })
         throw e
-    } finally { laufend.delete(schluessel) }
+    } finally { laufend.delete(laufSchluessel) }
 }
 
 export function setupChartKiRoutes(app) {
@@ -382,10 +423,10 @@ export function setupChartKiRoutes(app) {
         if (!SYMBOL_RE.test(symbol)) return res.status(400).json({ error: 'symbol ungültig' })
         if (!isValidTimeframe(interval)) return res.status(400).json({ error: `Zeiteinheit ${interval} wird nicht unterstützt` })
         try {
-            res.json(await erzeugeChartAnalyse({ symbol, interval, markt: req.body?.markt === 'spot' ? 'spot' : 'futures' }))
+            res.json(await erzeugeChartAnalyse({ symbol, interval, markt: req.body?.markt === 'spot' ? 'spot' : 'futures', auswahl: req.body?.auswahl }))
         } catch (e) {
             logWarn('chart-ki', `${symbol} ${interval}: ${e.message}`)
-            res.status(e.status === 429 ? 429 : 502).json({ error: e.message })
+            res.status(e.status === 429 || e.status === 400 ? e.status : 502).json({ error: e.message })
         }
     })
 }
