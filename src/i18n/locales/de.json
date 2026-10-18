@@ -5178,6 +5178,8 @@
       "zone": "Zone",
       "verworfen": "{n} Vorschläge verworfen (ausserhalb der Kerzen oder Prognose)",
       "vorschauWeg": "Vorschau ausblenden"
-    }
+    },
+    "indAktiv": "Aktiv in diesem Chart",
+    "indHinzu": "Hinzufügen"
   }
 }

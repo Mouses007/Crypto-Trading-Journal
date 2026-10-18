@@ -415,7 +415,11 @@ watch(sichtbareAnzahl, async () => {
             </div>
         </template>
         <AlarmDialog v-if="alarmVorlage" :vorlage="alarmVorlage" @schliesse="alarmVorlage = null" />
-        <IndikatorDialog v-if="dialog" :instanz="dialog.instanz" @hinzu="indikatorHinzu" @speichere="indikatorSpeichern"
+        <IndikatorDialog v-if="dialog" :key="dialog.instanz?.id || 'neu'" :instanz="dialog.instanz"
+            :aktive="daten.panels[dialog.panel]?.indikatoren || []" @hinzu="indikatorHinzu" @speichere="indikatorSpeichern"
+            @bearbeite="(id) => indikatorAktion(dialog.panel, { aktion: 'bearbeiten', id })"
+            @entferne="(id) => indikatorAktion(dialog.panel, { aktion: 'entfernen', id })"
+            @umschalten="(id) => indikatorAktion(dialog.panel, { aktion: 'umschalten', id })"
             @schliesse="dialog = null" />
         <div v-else-if="!ladeFehler && !bereit" class="laden"><span class="spinner-border spinner-border-sm"></span></div>
     </div>

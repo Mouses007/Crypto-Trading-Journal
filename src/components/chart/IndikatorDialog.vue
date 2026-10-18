@@ -6,12 +6,13 @@
  */
 import { ref, computed, onMounted, nextTick } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { INDIKATOREN, saubereParams } from '../../utils/chart/indikatorRegister.js'
+import { INDIKATOREN, saubereParams, kurzname } from '../../utils/chart/indikatorRegister.js'
 
 const props = defineProps({
     instanz: { type: Object, default: null },    // null = hinzufügen
+    aktive: { type: Array, default: () => [] },  // Indikatoren des Panels — zum Einstellen und Entfernen
 })
-const emit = defineEmits(['hinzu', 'speichere', 'schliesse'])
+const emit = defineEmits(['hinzu', 'speichere', 'schliesse', 'bearbeite', 'entferne', 'umschalten'])
 const { t } = useI18n()
 
 const suche = ref('')
@@ -71,6 +72,19 @@ onMounted(async () => {
                     <b>{{ t('chart.indikatoren') }}</b>
                     <button class="zu" @click="emit('schliesse')"><i class="uil uil-times"></i></button>
                 </div>
+                <template v-if="aktive.length">
+                    <div class="abschnitt">{{ t('chart.indAktiv') }}</div>
+                    <div class="aktiveListe">
+                        <div v-for="a in aktive" :key="a.id" class="aktiv" :class="{ aus: a.sichtbar === false }">
+                            <span class="name">{{ kurzname(a.typ, a.params, t('chart.ind.' + a.typ + '.kurz')) }}</span>
+                            <button :title="t(a.sichtbar === false ? 'chart.einblenden' : 'chart.ausblenden')" @click="emit('umschalten', a.id)">
+                                <i :class="a.sichtbar === false ? 'uil uil-eye-slash' : 'uil uil-eye'"></i></button>
+                            <button :title="t('chart.einstellungen')" @click="emit('bearbeite', a.id)"><i class="uil uil-setting"></i></button>
+                            <button class="weg" :title="t('chart.entfernen')" @click="emit('entferne', a.id)"><i class="uil uil-trash-alt"></i></button>
+                        </div>
+                    </div>
+                    <div class="abschnitt">{{ t('chart.indHinzu') }}</div>
+                </template>
                 <input ref="feld" v-model="suche" class="form-control form-control-sm" :placeholder="t('chart.indSuchen')" />
                 <div class="liste">
                     <button v-for="x in liste" :key="x.typ" class="eintrag" @click="emit('hinzu', x.typ)">
@@ -147,6 +161,54 @@ onMounted(async () => {
     background: transparent;
     border: none;
     color: var(--grey-text);
+}
+
+.abschnitt {
+    font-size: 10px;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: var(--grey-text);
+}
+
+.aktiveListe {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    max-height: 30vh;
+    overflow-y: auto;
+}
+
+.aktiv {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    padding: 3px 6px;
+    border-radius: 6px;
+    background: var(--white-10);
+    font-size: 12px;
+}
+
+.aktiv.aus {
+    opacity: 0.5;
+}
+
+.aktiv .name {
+    flex: 1;
+}
+
+.aktiv button {
+    background: transparent;
+    border: none;
+    color: var(--grey-text);
+    padding: 0 4px;
+}
+
+.aktiv button:hover {
+    color: var(--white-87, #eee);
+}
+
+.aktiv button.weg:hover {
+    color: var(--red-color);
 }
 
 .liste {

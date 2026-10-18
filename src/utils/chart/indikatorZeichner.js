@@ -168,7 +168,15 @@ export class IndikatorZeichner {
         for (const e of this.eintraege) {
             aus[e.instanz.id] = e.def.ausgaben
                 .filter((a) => e.werte[a.key])
-                .map((a) => ({ key: a.key, farbe: e.instanz.farben?.[a.key] || a.farbe, wert: i >= 0 ? e.werte[a.key][i] : null }))
+                .map((a) => {
+                    const reihe = e.werte[a.key]
+                    let j = i
+                    // Ohne Fadenkreuz: der letzte VORHANDENE Wert. Reihen, die nur
+                    // auf geschlossenen Kerzen rechnen (Momentum), haben an der
+                    // laufenden Kerze keinen — die Legende zeigte dann „—".
+                    if (t == null) while (j > 0 && reihe[j] == null) j--
+                    return { key: a.key, farbe: e.instanz.farben?.[a.key] || a.farbe, wert: j >= 0 ? reihe[j] : null }
+                })
         }
         return aus
     }

@@ -1033,12 +1033,14 @@ defineExpose({
     align-items: center;
     pointer-events: auto;
     width: fit-content;
-    padding: 0 4px;
-    border-radius: 3px;
+    padding: 1px 4px;
+    border-radius: 4px;
+    /* Eigener Hintergrund: sonst verschwimmt die Zeile mit Beschriftungen im Chart. */
+    background: rgba(10, 14, 22, 0.72);
 }
 
 .indZeile:hover {
-    background: rgba(0, 0, 0, 0.45);
+    background: rgba(10, 14, 22, 0.92);
 }
 
 .indZeile.aus {
@@ -1050,12 +1052,15 @@ defineExpose({
 }
 
 .indKnoepfe {
-    display: none;
+    /* Immer sichtbar, nur gedämpft — nur-beim-Darüberfahren fand niemand,
+       und am Telefon gibt es kein Darüberfahren. */
+    display: inline-flex;
     gap: 2px;
+    opacity: 0.55;
 }
 
 .indZeile:hover .indKnoepfe {
-    display: inline-flex;
+    opacity: 1;
 }
 
 .indKnoepfe button {
