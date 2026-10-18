@@ -49,8 +49,15 @@ function median(werte) {
  *
  * `spanne` sagt, wie weit das Buch reicht: 500 Stufen sind bei SOL ±4,8 %,
  * bei BTC nur ±0,07 % — weiter weg kann der Snapshot keine Wand zeigen.
+ *
+ * `umsatzJeMinute` (USD, aus dem 24h-Umsatz) ist der zweite, absolute
+ * Massstab: eine Wand muss mindestens `minMinuten` durchschnittlichen Umsatz
+ * tragen. „Grösser als die anderen Zonen" allein reicht nicht — bei BTC ist
+ * im engen Buch ALLES klein (2 Mio bei ~10 Mio Umsatz je Minute sind in
+ * Sekunden weg), bei SOL sind 9 Mio neun Minuten Umsatz, also wirklich eine
+ * Wand. `minuten` je Wand sagt genau das.
  */
-export function waendeAusBuch(buch, { zonenJeSeite = 40, spannePct = 5, anzahl = 4, faktor = 2.5 } = {}) {
+export function waendeAusBuch(buch, { zonenJeSeite = 40, spannePct = 5, anzahl = 4, faktor = 2.5, umsatzJeMinute = null, minMinuten = 2 } = {}) {
     const bids = (buch?.bids || []).map(([p, q]) => [Number(p), Number(q)]).filter(([p, q]) => p > 0 && q > 0)
     const asks = (buch?.asks || []).map(([p, q]) => [Number(p), Number(q)]).filter(([p, q]) => p > 0 && q > 0)
     if (!bids.length || !asks.length) return { kaeufe: [], verkaeufe: [], mitte: null, spanne: null }
@@ -76,17 +83,20 @@ export function waendeAusBuch(buch, { zonenJeSeite = 40, spannePct = 5, anzahl =
         }
         const zonen = [...karte.values()].map((b) => ({ preis: b.pUsd / b.usd, usd: b.usd }))
         const m = median(zonen.map((z) => z.usd))
+        const proMin = umsatzJeMinute > 0 ? umsatzJeMinute : null
         return zonen
             .filter((z) => zonen.length < 4 || z.usd >= m * faktor)
+            .filter((z) => !proMin || z.usd >= proMin * minMinuten)
             .sort((a, b) => b.usd - a.usd)
             .slice(0, anzahl)
-            .map((z) => ({ ...z, vielfaches: m > 0 ? z.usd / m : null }))
+            .map((z) => ({ ...z, vielfaches: m > 0 ? z.usd / m : null, minuten: proMin ? z.usd / proMin : null }))
     }
     return {
         kaeufe: fasse(bids),
         verkaeufe: fasse(asks),
         mitte,
-        spanne: { unten: (mitte - tiefst) / mitte * 100, oben: (hoechst - mitte) / mitte * 100 },
+        // Gesucht wird höchstens ±spannePct — weiter darf die Legende auch nicht behaupten.
+        spanne: { unten: Math.min(spannePct, (mitte - tiefst) / mitte * 100), oben: Math.min(spannePct, (hoechst - mitte) / mitte * 100) },
     }
 }
 
@@ -132,7 +142,7 @@ export function platziereSchilder(waende, { zusammen = 4, abstand = 13 } = {}) {
     const eins = []
     for (const w of sortiert) {
         const nah = eins.find((e) => e.seite === w.seite && Math.abs(e.y - w.y) < zusammen)
-        if (nah) nah.usd += w.usd
+        if (nah) { nah.usd += w.usd; if (nah.minuten != null && w.minuten != null) nah.minuten += w.minuten }
         else eins.push({ ...w })
     }
     const belegt = []
@@ -229,7 +239,7 @@ export class MarktEbene {
             ctx.fillStyle = `rgba(${w.rgb},0.75)`
             ctx.fillRect(breite - l, y - 2, l, 4)
             if (!w.schild) continue
-            const text = `${w.name} ${usdKurz(w.usd)}`
+            const text = `${w.name} ${usdKurz(w.usd)}${w.minuten != null ? ` · ${w.minuten < 10 ? w.minuten.toFixed(1) : Math.round(w.minuten)} min` : ''}`
             const b = ctx.measureText(text).width
             ctx.fillStyle = 'rgba(10,14,22,0.75)'
             ctx.fillRect(breite - l - b - 10, y - 7, b + 6, 13)

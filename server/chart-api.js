@@ -463,7 +463,8 @@ export function setupChartRoutes(app) {
                     const antwort = await axios.get(basis, { params: { symbol: sym }, timeout: HTTP_TIMEOUT })
                     if (markt === 'futures') notiereGewicht(antwort.headers)
                     const data = antwort.data
-                    const wert = { c: Number(data.lastPrice), o: Number(data.openPrice) }
+                    // q = 24h-Umsatz in USDT — der Chart misst daran, ob eine Orderbuch-Wand gross ist
+                    const wert = { c: Number(data.lastPrice), o: Number(data.openPrice), q: Number(data.quoteVolume) }
                     if (Number.isFinite(wert.c)) { tickerCache.set(k, { zeit: Date.now(), wert }); aus[sym] = wert }
                 } catch (e) {
                     if (markt === 'futures' && e.response) melde429(e.response.status, e.response.headers)

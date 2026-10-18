@@ -33,6 +33,14 @@ console.log('\nOrderbuch-Wände\n')
     const glatt = waendeAusBuch({ bids: bids.map(([p]) => [p, '10']), asks: asks.map(([p]) => [p, '10']) })
     check('Gegenprobe: gleichmässiges Buch → keine Wand', glatt.kaeufe.length === 0 && glatt.verkaeufe.length === 0)
     check('leeres Buch bricht nicht', waendeAusBuch({ bids: [], asks: [] }).kaeufe.length === 0)
+    // Absoluter Massstab: die Zone um 99.50 trägt 400 × 99.5 plus die Nachbarstufen ≈ 41 800 USD
+    const gross = waendeAusBuch({ bids, asks }, { umsatzJeMinute: 10_000 })
+    check('Wand mit ~4 Minuten Umsatz bleibt und nennt die Minuten', gross.kaeufe.length === 1 && Math.abs(gross.kaeufe[0].minuten - 4.18) < 0.05, JSON.stringify(gross.kaeufe[0]))
+    const btc = waendeAusBuch({ bids, asks }, { umsatzJeMinute: 1_000_000 })
+    check('Gegenprobe: bei grossem Umsatz (BTC-Fall) ist dieselbe Zone keine Wand', btc.kaeufe.length === 0 && btc.verkaeufe.length === 0)
+    check('ohne Umsatz gilt nur der relative Massstab (minuten = null)', w.kaeufe[0].minuten === null)
+    const weit = waendeAusBuch({ bids: [['100', '1'], ['50', '1']], asks: [['101', '1'], ['150', '1']] })
+    check('Reichweite höchstens die Suchspanne (±5 %), auch wenn das Buch weiter reicht', weit.spanne.unten === 5 && weit.spanne.oben === 5, JSON.stringify(weit.spanne))
 }
 
 console.log('\nSchilder ohne Überlappung\n')

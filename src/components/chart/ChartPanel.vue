@@ -318,6 +318,24 @@ async function ladeHebelzonen() {
     } catch { marktEbene.setzeZonen(null); hinweis('hebelzonen', t('chart.markt.hebelKeine')) }
 }
 
+/*
+ * Durchschnittlicher Umsatz je Minute (24h-Umsatz / 1440) — der absolute
+ * Massstab für Wände. 10 Minuten gemerkt; fehlt er, gilt nur der relative.
+ */
+const umsatzCache = new Map()
+async function umsatzJeMinute(symbol, markt) {
+    const k = `${markt}|${symbol}`
+    const c = umsatzCache.get(k)
+    if (c && Date.now() - c.zeit < 600_000) return c.wert
+    try {
+        const { data } = await axios.get('/api/chart/ticker', { params: { markt, symbole: symbol } })
+        const q = Number(data.kurse?.[symbol]?.q)
+        const wert = q > 0 ? q / 1440 : null
+        umsatzCache.set(k, { zeit: Date.now(), wert })
+        return wert
+    } catch { return null }
+}
+
 async function ladeWaende() {
     if (!marktEbene) return
     if (!overlayAn('orderbuch')) { marktEbene.setzeWaende(null); hinweis('orderbuch', null); return }
@@ -325,9 +343,13 @@ async function ladeWaende() {
     try {
         // limit 500 statt 1000: halbes Gewicht, und Wände jenseits von ±5 %
         // zeigt der Chart ohnehin nicht.
-        const { data } = await axios.get('/api/binance/depth', { params: { symbol, market: markt === 'spot' ? 'spot' : 'futures', limit: 500 } })
+        const m = markt === 'spot' ? 'spot' : 'futures'
+        const [{ data }, proMin] = await Promise.all([
+            axios.get('/api/binance/depth', { params: { symbol, market: m, limit: 500 } }),
+            umsatzJeMinute(symbol, m),
+        ])
         if (symbol !== props.panel.symbol) return
-        const w = waendeAusBuch(data)
+        const w = waendeAusBuch(data, { umsatzJeMinute: proMin })
         marktEbene.setzeWaende(w)
         // Wie weit der Snapshot reicht — bei BTC nur ±0,07 %, dahinter kann er keine Wand zeigen.
         if (w.spanne) hinweis('orderbuch', t(w.kaeufe.length || w.verkaeufe.length ? 'chart.markt.buchReicht' : 'chart.markt.buchKeineWand',

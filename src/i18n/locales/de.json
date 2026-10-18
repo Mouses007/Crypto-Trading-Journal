@@ -5324,7 +5324,7 @@
         "liquidationen": "Aufgezeichnete Zwangsliquidationen (Binance, Stichprobe: höchstens eine je Sekunde). Nur für Symbole, die der Rekorder aufzeichnet (Einstellungen → Live-Analyse).",
         "hebelzonen": "Geschätzte Liquidationszonen aus Open-Interest-Verlauf und Kerzen — ein Modell, keine Messung. Unter dem Preis Long-Liquidationen (Zwangsverkäufe), darüber Shorts (Zwangskäufe).",
         "momentum": "Momentum Radar rechnet nur auf 5m, 15m, 1h und 4h.",
-        "orderbuch": "Ruhende Wände aus dem Binance-Orderbuch (500 Stufen je Seite, alle 10 s). Eine Wand ist eine Preiszone mit mindestens dem 2,5-Fachen der üblichen Zone ihrer Seite. Weiter als ±… % reicht der Snapshot nicht — bei BTC sind das nur wenige Hundertstel Prozent."
+        "orderbuch": "Ruhende Wände aus dem Binance-Orderbuch (500 Stufen je Seite, alle 10 s). Eine Wand ist eine Preiszone, die mindestens das 2,5-Fache der üblichen Zone ihrer Seite UND mindestens 2 Minuten durchschnittlichen Umsatzes trägt — „· 9 min\" am Schild heisst: so lange bräuchte der Markt im Schnitt, um sie abzuräumen. Weiter als ±… % reicht der Snapshot nicht — bei BTC sind das nur wenige Hundertstel Prozent."
       },
       "buchReicht": "Orderbuch: Wände ±{p} %",
       "buchKeineWand": "Orderbuch: keine Wand in ±{p} %",
