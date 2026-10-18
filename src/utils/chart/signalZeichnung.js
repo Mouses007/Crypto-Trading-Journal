@@ -13,6 +13,7 @@
  * die Strategie hinsah und warum nichts kam.
  */
 import { ereignisZuLogisch, logischZuX } from './zeichnungen/geometrie.js'
+import { zeichneSchild } from './schild.js'
 
 const SCHRIFT = '11px -apple-system, "Segoe UI", Roboto, sans-serif'
 const GRUEN = '#26a69a'
@@ -104,6 +105,7 @@ export class SignalZeichnung {
             if (long) { ctx.moveTo(xe, ye + 2); ctx.lineTo(xe - 6, ye + 12); ctx.lineTo(xe + 6, ye + 12) }
             else { ctx.moveTo(xe, ye - 2); ctx.lineTo(xe - 6, ye - 12); ctx.lineTo(xe + 6, ye - 12) }
             ctx.closePath(); ctx.fill()
+            zeichneSchild(ctx, { text: long ? 'Long' : 'Short', x: xe, y: long ? ye + 12 : ye - 12, farbe, art: 'kontur', seite: long ? 'unten' : 'oben', abstand: 4 })
             // Einstieg, Stop, Ziel bis zum Ausgang
             const xa = s.exitT ? (this.X(s.exitT) ?? rechts) : rechts
             const linie = (p, f, strich) => {
@@ -118,14 +120,15 @@ export class SignalZeichnung {
             linie(s.stopLoss, rgba(ROT, 0.8), [4, 3])
             linie(s.takeProfit, rgba(GRUEN, 0.8), [4, 3])
             if (s.ausgang && s.ausgang !== 'offen') {
-                const text = s.ausgang === 'ziel' ? '✓ Ziel' : '✗ Stop'
+                const ziel = s.ausgang === 'ziel'
                 const yt = this.Y(s.exitP)
+                const risiko = Math.abs(s.entry - s.stopLoss)
+                const r = risiko > 0 && s.exitP > 0 ? ((long ? s.exitP - s.entry : s.entry - s.exitP) / risiko) : null
                 if (yt != null) {
-                    const b = ctx.measureText(text).width
-                    ctx.fillStyle = 'rgba(0,0,0,0.55)'
-                    ctx.fillRect(xa + 3, yt - 9, b + 6, 13)
-                    ctx.fillStyle = s.ausgang === 'ziel' ? GRUEN : ROT
-                    ctx.fillText(text, xa + 6, yt + 1)
+                    zeichneSchild(ctx, {
+                        text: ziel ? '✓ Ziel' : '✕ Stop', zeile2: r != null ? `${r >= 0 ? '+' : '−'}${Math.abs(r).toFixed(2)} R` : '',
+                        x: xa, y: yt, farbe: ziel ? GRUEN : ROT, art: 'voll', seite: 'rechts', abstand: 4,
+                    })
                 }
             }
         }

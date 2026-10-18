@@ -11,8 +11,7 @@
  *          Einstieg an der EMA. Die EMAs selbst sind Serien des Indikators.
  */
 import { ereignisZuLogisch, logischZuX } from './zeichnungen/geometrie.js'
-
-const SCHRIFT = '11px -apple-system, "Segoe UI", Roboto, sans-serif'
+import { zeichneSchild } from './schild.js'
 
 function rgba(hex, a) {
     const m = /^#([0-9a-f]{6})$/i.exec(hex || '')
@@ -57,22 +56,7 @@ export class CvZeichnung {
         return L == null ? null : logischZuX(this.chart.timeScale(), L)
     }
     Y(p) { return p == null || !Number.isFinite(p) ? null : this.serie.priceToCoordinate(p) }
-
-    label(ctx, text, x, y, hinten, vorne, oben) {
-        ctx.font = SCHRIFT
-        const w = ctx.measureText(text).width + 10, h = 16
-        const x0 = x - w / 2, y0 = oben ? y - h - 6 : y + 6
-        ctx.fillStyle = hinten
-        ctx.beginPath()
-        ctx.roundRect?.(x0, y0, w, h, 3) ?? ctx.rect(x0, y0, w, h)
-        ctx.fill()
-        // kleiner Zeiger zur Kerze
-        ctx.beginPath()
-        if (oben) { ctx.moveTo(x - 4, y0 + h); ctx.lineTo(x + 4, y0 + h); ctx.lineTo(x, y0 + h + 5) } else { ctx.moveTo(x - 4, y0); ctx.lineTo(x + 4, y0); ctx.lineTo(x, y0 - 5) }
-        ctx.fill()
-        ctx.fillStyle = vorne
-        ctx.fillText(text, x0 + 5, y0 + 12)
-    }
+    preis(p) { try { return this.serie.priceFormatter().format(p) } catch { return String(p) } }
 
     zeichne(ctx, groesse) {
         const d = this.daten
@@ -100,7 +84,7 @@ export class CvZeichnung {
             ctx.beginPath(); ctx.moveTo(x1, short ? yu : yo); ctx.lineTo(rechts, short ? yu : yo); ctx.stroke()
             ctx.strokeStyle = rgba(farbe, 0.45)
             ctx.strokeRect(x1, yo, rechts - x1, yu - yo)
-            if (p.cvLabels !== false) this.label(ctx, 'LSOB', x1 + 18, short ? yo : yu, rgba(farbe, 0.55), '#fff', short)
+            if (p.cvLabels !== false) zeichneSchild(ctx, { text: short ? 'LSOB ▼' : 'LSOB ▲', x: x1 + 26, y: short ? yo : yu, farbe, art: 'kontur', seite: short ? 'oben' : 'unten', abstand: 5 })
         }
         if (p.cvVorwarn) {
             ctx.strokeStyle = p.cvVorwarnFarbe || '#2962ff'
@@ -136,13 +120,13 @@ export class CvZeichnung {
             if (e.status === 'verfallen') continue
             const lang = e.seite === 'long'
             const name = lang ? 'GUSS' : 'R-GUSS'
-            const kraeftig = lang ? '#2e7d32' : '#c62828'
-            const blass = lang ? 'rgba(46,125,50,0.55)' : 'rgba(198,40,40,0.55)'
+            const farbe = lang ? '#26a69a' : '#ef5350'
+            // Start: Kontur (blass, solange kein Einstieg kam); Entry: volle Fläche mit Ziel-EMA und Preis.
             const xs = this.X(e.startT), ys = this.Y(e.startP)
-            if (xs != null && ys != null) this.label(ctx, `${name} Start`, xs, ys, e.status === 'entry' ? kraeftig : blass, 'rgba(255,255,255,0.9)', lang)
+            if (xs != null && ys != null) zeichneSchild(ctx, { text: `${name} Start`, x: xs, y: ys, farbe, art: 'kontur', blass: e.status !== 'entry', seite: lang ? 'oben' : 'unten' })
             if (e.status !== 'entry') continue
             const xe = this.X(e.entryT), ye = this.Y(e.entryP)
-            if (xe != null && ye != null) this.label(ctx, `${name} Entry (${e.ziel})`, xe, ye, lang ? '#4caf50' : '#e53935', lang ? '#000' : '#fff', !lang)
+            if (xe != null && ye != null) zeichneSchild(ctx, { text: `${name} Entry`, zeile2: `${e.ziel} · ${this.preis(e.entryP)}`, x: xe, y: ye, farbe, art: 'voll', seite: lang ? 'unten' : 'oben' })
         }
     }
 }
