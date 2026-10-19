@@ -277,6 +277,11 @@ function loescheListe() {
     opacity: 1;
 }
 
+/* Abstand Symbol → erstes Börsen-Kürzel deutlich grösser als zwischen den Kürzeln */
+.sym > .boerse:first-of-type {
+    margin-left: 8px;
+}
+
 /* Hausfarben gedämpft: Bitunix Grün, Bitget Türkis, Pionex Orange */
 .boerse.bitunix { color: #5fd38d; }
 .boerse.bitget { color: #36c2d6; }
