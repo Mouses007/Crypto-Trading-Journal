@@ -12,7 +12,7 @@
 
 process.env.CTJ_DB_FILE = ':memory:'
 
-const { initDb } = await import('./database.js')
+const { initDb, getKnex, uebernehmeLageberichtMail } = await import('./database.js')
 const { setupApiRoutes } = await import('./api-routes.js')
 const express = (await import('express')).default
 
@@ -145,6 +145,42 @@ console.log('\nEinstellungen\n')
     check('sensibles Feld wird nicht übernommen/ausgeliefert',
         json?.aiApiKey === undefined || json?.aiApiKey === '' || json?.aiApiKey === '[REDACTED]',
         String(json?.aiApiKey))
+}
+
+console.log('\nÜbernahme Lagebericht-Mail (einmalig)\n')
+
+{
+    // Bis 19.10.2026 lief die Übernahme bei jedem Start: wer den Versand
+    // ausschaltete, hatte ihn nach dem Neustart wieder an.
+    const knex = getKnex()
+    const lies = async () => {
+        const z = await knex('settings').where('id', 1).select('benachrichtigungen', 'radarNewsMailAktiv').first()
+        return { aktiv: Number(z.radarNewsMailAktiv), wahl: JSON.parse(z.benachrichtigungen || '{}') }
+    }
+    await knex('settings').where('id', 1).update({
+        radarNewsMailAktiv: 0,
+        benachrichtigungen: JSON.stringify({ lageberichtFertig: { email: true, browser: true }, chartAlarm: { email: true } }),
+    })
+    await uebernehmeLageberichtMail(knex)
+    const a = await lies()
+    check('alte Mail-Wahl wird übernommen', a.aktiv === 1, String(a.aktiv))
+    check('alte Wahl danach gelöscht, Rest bleibt',
+        a.wahl.lageberichtFertig?.email === false && a.wahl.lageberichtFertig?.browser === true && a.wahl.chartAlarm?.email === true,
+        JSON.stringify(a.wahl))
+
+    // Nutzer schaltet aus, Server startet neu → bleibt aus.
+    await knex('settings').where('id', 1).update({ radarNewsMailAktiv: 0 })
+    await uebernehmeLageberichtMail(knex)
+    check('ausgeschalteter Versand bleibt nach Neustart aus', (await lies()).aktiv === 0)
+
+    // Altbestand: schon übernommen (1), alte Wahl noch true → nur aufräumen.
+    await knex('settings').where('id', 1).update({
+        radarNewsMailAktiv: 1, benachrichtigungen: JSON.stringify({ lageberichtFertig: { email: true } }),
+    })
+    await uebernehmeLageberichtMail(knex)
+    await knex('settings').where('id', 1).update({ radarNewsMailAktiv: 0 })
+    await uebernehmeLageberichtMail(knex)
+    check('Altbestand: alte Wahl wird auch bei aktivem Schalter gelöscht', (await lies()).aktiv === 0)
 }
 
 server.close()

@@ -2151,32 +2151,7 @@ async function runMigrations(knex, client) {
     await addColumnIfNotExists('settings', 'radarNewsMailAktiv', (t) => t.integer('radarNewsMailAktiv').defaultTo(0))
     await addColumnIfNotExists('settings', 'radarNewsMailAn', (t) => t.text('radarNewsMailAn').defaultTo(''))
 
-    /*
-     * Einmalige Übernahme: Wer den Lagebericht bisher per Mail bekam, bekommt
-     * ihn weiter.
-     *
-     * Die Entscheidung stand bis jetzt in `settings.benachrichtigungen` unter
-     * `lageberichtFertig.email`; ab jetzt steht sie in `radarNewsMailAktiv`.
-     * Ohne diesen Schritt fiele der Versand beim Umstieg still aus — und ein
-     * ausbleibender Bericht ist genau die Art Fehler, die man erst nach Tagen
-     * bemerkt und dann am SMTP-Zugang sucht.
-     *
-     * Läuft nur, solange der neue Schalter noch auf der Vorgabe steht: Wer ihn
-     * bewusst ausgeschaltet hat, soll das behalten.
-     */
-    const mailZeile = await knex('settings').where('id', 1)
-        .select('benachrichtigungen', 'radarNewsMailAktiv').first()
-    if (mailZeile && Number(mailZeile.radarNewsMailAktiv ?? 0) === 0) {
-        let alteWahl = {}
-        try {
-            const roh = mailZeile.benachrichtigungen
-            alteWahl = typeof roh === 'string' ? JSON.parse(roh || '{}') : (roh || {})
-        } catch { alteWahl = {} }
-        if (alteWahl?.lageberichtFertig?.email === true) {
-            await knex('settings').where('id', 1).update({ radarNewsMailAktiv: 1 })
-            console.log(' -> Einstellungen: Mail-Versand des Lageberichts übernommen (jetzt unter KI → Nachrichten)')
-        }
-    }
+    await uebernehmeLageberichtMail(knex)
     // Aufbewahrung der BERICHTE (nicht der Rohbeiträge, die haben ihre eigenen
     // 30 Tage). Vorgabe „manuell": ein Bericht ist bezahlte Arbeit, und was
     // automatisch verschwindet, verschwindet irgendwann auch ungelegen.
@@ -3521,4 +3496,38 @@ async function runMigrations(knex, client) {
     } else if (dbVersion < SCHEMA_VERSION) {
         await knex('settings').where('id', 1).update({ schemaVersion: SCHEMA_VERSION })
     }
+}
+
+/*
+ * Einmalige Übernahme: Wer den Lagebericht bisher per Mail bekam, bekommt
+ * ihn weiter.
+ *
+ * Die Entscheidung stand bis jetzt in `settings.benachrichtigungen` unter
+ * `lageberichtFertig.email`; ab jetzt steht sie in `radarNewsMailAktiv`.
+ * Ohne diesen Schritt fiele der Versand beim Umstieg still aus — und ein
+ * ausbleibender Bericht ist genau die Art Fehler, die man erst nach Tagen
+ * bemerkt und dann am SMTP-Zugang sucht.
+ *
+ * „Einmalig" heisst: Die alte Wahl wird nach der Übernahme auf `false`
+ * gesetzt. Bis 19.10.2026 blieb sie stehen, und die Übernahme lief bei JEDEM
+ * Start — wer den Versand unter KI → Nachrichten ausschaltete, hatte ihn nach
+ * dem nächsten Neustart wieder an. Steht der neue Schalter schon auf 1, ist
+ * die Übernahme erledigt und nur die alte Wahl wird gelöscht.
+ */
+export async function uebernehmeLageberichtMail(knex) {
+    const mailZeile = await knex('settings').where('id', 1)
+        .select('benachrichtigungen', 'radarNewsMailAktiv').first()
+    if (!mailZeile) return
+    let alteWahl = {}
+    try {
+        const roh = mailZeile.benachrichtigungen
+        alteWahl = typeof roh === 'string' ? JSON.parse(roh || '{}') : (roh || {})
+    } catch { return }
+    if (alteWahl?.lageberichtFertig?.email !== true) return
+    const neu = { ...alteWahl, lageberichtFertig: { ...alteWahl.lageberichtFertig, email: false } }
+    const aenderung = { benachrichtigungen: JSON.stringify(neu) }
+    const uebernehmen = Number(mailZeile.radarNewsMailAktiv ?? 0) === 0
+    if (uebernehmen) aenderung.radarNewsMailAktiv = 1
+    await knex('settings').where('id', 1).update(aenderung)
+    if (uebernehmen) console.log(' -> Einstellungen: Mail-Versand des Lageberichts übernommen (jetzt unter KI → Nachrichten)')
 }
