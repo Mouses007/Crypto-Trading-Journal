@@ -42,12 +42,17 @@ async function tpslVon(pos) {
  * Mehrere Panels zeigen oft dasselbe Symbol — sie teilen sich eine Abfrage
  * der offenen Positionen, statt jede für sich die Datenbank zu fragen.
  */
+/** Wie `isBotPosition` auf „Pendente Trades": botType im Verlauf oder isBot/botType in den Börsendaten. */
+const istBot = (p) => !!(p?.historyData?.botType || p?.bitunixData?.isBot || p?.bitunixData?.botType)
+
 let offenAbruf = null
 let offenStand = 0
 function offenePositionenRoh() {
     if (!offenAbruf || Date.now() - offenStand > 5000) {
         offenStand = Date.now()
-        offenAbruf = dbFind('incoming_positions', { equalTo: { status: 'open' } }).catch(() => [])
+        // Bot-Positionen (Pionex-Grid u. ä.) gehören nicht in den Chart: kein eigener
+        // Einstieg, kein Stop/Ziel, ein Durchschnitt vieler Grid-Fills.
+        offenAbruf = dbFind('incoming_positions', { equalTo: { status: 'open' } }).then((l) => l.filter((p) => !istBot(p))).catch(() => [])
     }
     return offenAbruf
 }
