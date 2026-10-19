@@ -66,24 +66,32 @@ function tpslVerlaufVon(roh) {
 export async function ladeOffenePositionen(symbol) {
     const ziel = normSymbol(symbol)
     const zeilen = await offenePositionenRoh()
-    const passende = zeilen.filter((p) => normSymbol(p.symbol) === ziel)
-    return Promise.all(passende.map(async (p) => {
-        const roh = p.bitunixData || {}
-        const { sl, tp } = await tpslVon(p)
-        return {
-            id: p.positionId,
-            broker: p.broker || 'bitunix',
-            richtung: String(p.side).toUpperCase() === 'SHORT' ? 'short' : 'long',
-            einstieg: zahl(p.entryPrice),
-            menge: zahl(p.quantity),
-            hebel: zahl(p.leverage),
-            liq: zahl(roh.liqPrice ?? roh.liq_price ?? roh.liquidationPrice),
-            upnl: Number(p.unrealizedPNL) || 0,
-            sl,
-            tp,
-            // Einstiegszeit von der Börse (Bitunix `ctime`), sonst die erste Erfassung
-            einstiegT: Number(roh.ctime) || Date.parse(p.createdAt) || null,
-            tpslVerlauf: tpslVerlaufVon(p.tpslHistory),
-        }
-    }))
+    return Promise.all(zeilen.filter((p) => normSymbol(p.symbol) === ziel).map(ausZeile))
+}
+
+/** Alle offenen Positionen, über alle Symbole (Reiter „Offene Trades"). */
+export async function ladeAlleOffenen() {
+    const zeilen = await offenePositionenRoh()
+    return Promise.all(zeilen.map(ausZeile))
+}
+
+async function ausZeile(p) {
+    const roh = p.bitunixData || {}
+    const { sl, tp } = await tpslVon(p)
+    return {
+        id: p.positionId,
+        symbol: normSymbol(p.symbol),
+        broker: p.broker || 'bitunix',
+        richtung: String(p.side).toUpperCase() === 'SHORT' ? 'short' : 'long',
+        einstieg: zahl(p.entryPrice),
+        menge: zahl(p.quantity),
+        hebel: zahl(p.leverage),
+        liq: zahl(roh.liqPrice ?? roh.liq_price ?? roh.liquidationPrice),
+        upnl: Number(p.unrealizedPNL) || 0,
+        sl,
+        tp,
+        // Einstiegszeit von der Börse (Bitunix `ctime`), sonst die erste Erfassung
+        einstiegT: Number(roh.ctime) || Date.parse(p.createdAt) || null,
+        tpslVerlauf: tpslVerlaufVon(p.tpslHistory),
+    }
 }

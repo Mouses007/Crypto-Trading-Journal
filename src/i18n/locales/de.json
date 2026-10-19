@@ -4862,6 +4862,7 @@
     "seitenleiste": "Seitenleiste ein/aus",
     "reiter": {
       "watchlist": "Watchlist",
+      "offen": "Offene Trades",
       "objekte": "Zeichnungen",
       "strategien": "Strategien",
       "alarme": "Alarme",
@@ -5561,6 +5562,10 @@
       "k_signale": "Signale",
       "k_labels": "Labels",
       "k_vorwarn": "Vorwarnung"
+    },
+    "offen": {
+      "imChart": "Offene Positionen im Chart zeigen",
+      "leer": "Keine offenen Positionen."
     },
     "vvBox": {
       "titel": "VWAP Vector",

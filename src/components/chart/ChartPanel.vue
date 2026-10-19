@@ -35,6 +35,7 @@ import { StrategieEbene } from '../../utils/chart/overlays/StrategieEbene.js'
 import { MarktEbene, waendeAusBuch } from '../../utils/chart/overlays/MarktEbene.js'
 import { benoetigteQuellen, vwapVectorQuellen, INTRA_BUDGET, saubereParams, INDIKATOREN, strategieParams } from '../../utils/chart/indikatorRegister.js'
 import { ladeOffenePositionen } from '../../utils/chart/overlays/positionen.js'
+import { positionenAus } from '../../stores/chartPositionen.js'
 import { overlayAn as overlayAnFuer } from '../../utils/chart/overlays/liste.js'
 
 const props = defineProps({
@@ -630,7 +631,8 @@ function positionsTitel(pos, kurs) {
 async function ladePositionen() {
     if (!kerzenSerie.value) return
     const symbol = props.panel.symbol
-    const liste = overlayAn('positionen') ? await ladeOffenePositionen(symbol) : []
+    // Im Reiter „Offene Trades" einzeln ausgeblendete Positionen weglassen.
+    const liste = overlayAn('positionen') ? (await ladeOffenePositionen(symbol)).filter((p) => !positionenAus.value.has(String(p.id))) : []
     if (symbol !== props.panel.symbol || !kerzenSerie.value) return
     positionen = liste
     journalEbene?.setzeOffene(liste)
@@ -680,6 +682,7 @@ function sichtbarkeitGeaendert() {
     marktNeu()
 }
 
+watch(positionenAus, () => ladePositionen())
 watch(() => props.panel.overlays, () => { ladeJournal(); ladePositionen(); ladeStrategie(); marktNeu() }, { deep: true })
 watch(() => benoetigteQuellen(props.panel.indikatoren).join(), () => ladeExtern())
 // LSOB/GUSS: geänderte Strategie-Einstellungen → Signale neu rechnen lassen

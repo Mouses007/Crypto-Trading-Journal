@@ -26,6 +26,7 @@ import KiReiter from '../components/chart/KiReiter.vue'
 import AlarmDialog from '../components/chart/AlarmDialog.vue'
 import MomentumBox from '../components/chart/MomentumBox.vue'
 import IndikatorSchalter from '../components/chart/IndikatorSchalter.vue'
+import OffeneReiter from '../components/chart/OffeneReiter.vue'
 import { alarme, abonniereAlarme, neueAusloesungen, quittiere } from '../stores/chartAlarme.js'
 import { zeichnungenVon, aendere as zeichnungAendern, loesche as zeichnungLoeschen, macheRueckgaengig, macheWiederholen, fehlerMeldung } from '../stores/chartZeichnungen.js'
 import { neueInstanz, saubereParams, INDIKATOREN } from '../utils/chart/indikatorRegister.js'
@@ -56,6 +57,7 @@ const rasterKlasse = computed(() => (telefon.value ? 'r1' : 'r' + daten.value.ra
  */
 const REITER = [
     { id: 'watchlist', icon: 'uil uil-star' },
+    { id: 'offen', icon: 'uil uil-crosshair' },
     { id: 'objekte', icon: 'uil uil-layer-group' },
     { id: 'strategien', icon: 'uil uil-robot' },
     { id: 'alarme', icon: 'uil uil-bell' },
@@ -591,6 +593,9 @@ watch(sichtbareAnzahl, async () => {
                         :aktives-symbol="aktivesPanel.symbol" :aktiver-markt="aktivesPanel.markt"
                         @waehle="setzePanel({ symbol: $event.symbol, markt: $event.markt })" @aendere="watchlistAendern"
                         @neu="watchlistNeu" @loesche="watchlistLoeschen" />
+                    <OffeneReiter v-else-if="daten.seitenleiste.reiter === 'offen'" :panel="aktivesPanel"
+                        @waehle="(s) => setzePanel({ symbol: s, markt: 'futures' })"
+                        @overlay="(an) => { aktivesPanel.overlays = { ...(aktivesPanel.overlays || {}), positionen: an } }" />
                     <ObjektReiter v-else-if="daten.seitenleiste.reiter === 'objekte'" :symbol="aktivesPanel.symbol"
                         :zeichnungen="aktiveZeichnungen" :auswahl-id="aktiveAuswahl" @waehle="objektWaehlen"
                         @aendere="(z, patch) => zeichnungAendern(z.symbol, z.id, patch)"
