@@ -36,6 +36,7 @@ import { MarktEbene, waendeAusBuch } from '../../utils/chart/overlays/MarktEbene
 import { benoetigteQuellen, vwapVectorQuellen, INTRA_BUDGET, saubereParams, INDIKATOREN, strategieParams } from '../../utils/chart/indikatorRegister.js'
 import { ladeOffenePositionen } from '../../utils/chart/overlays/positionen.js'
 import { positionenAus } from '../../stores/chartPositionen.js'
+import { letzterStil, merkeStil } from '../../stores/zeichenStil.js'
 import { overlayAn as overlayAnFuer } from '../../utils/chart/overlays/liste.js'
 
 const props = defineProps({
@@ -130,10 +131,10 @@ function baueChart() {
      * App-Schrift, leichter Verlauf im Hintergrund, nur waagerechtes Raster,
      * Fadenkreuz und Kursmarke im Journal-Blau.
      *
-     * Kein TradingView-Logo im Chart: die Lizenz (Apache-2.0) verlangt den
-     * Hinweis auf TradingView mit Link auf einer Seite der App — der steht
-     * unten in der Seitenleiste des Arbeitsplatzes (`Chart.vue`), damit ist
-     * die Bedingung erfüllt und das Logo darf aus.
+     * TradingView-Logo bleibt an: die Lizenz (Apache-2.0 + NOTICE) verlangt
+     * den Hinweis auf TradingView mit Link für die Nutzer. Der Link in der
+     * Seitenleiste (`Chart.vue`) allein reichte nicht — die Leiste lässt
+     * sich zuklappen, dann war der Hinweis weg.
      */
     const c = createChart(huelle.value, {
         autoSize: true,
@@ -142,7 +143,7 @@ function baueChart() {
             textColor: text,
             fontSize: 11,
             fontFamily: schrift,
-            attributionLogo: false,
+            attributionLogo: true,
             panes: { separatorColor: 'rgba(1,180,255,0.12)', separatorHoverColor: 'rgba(1,180,255,0.25)', enableResize: true },
         },
         grid: { vertLines: { visible: false }, horzLines: { color: 'rgba(1,180,255,0.05)' } },
@@ -732,7 +733,8 @@ watch(() => props.magnet, (m) => ebene?.setzeMagnet(m))
 watch(() => props.panel.symbol, () => { auswahlId.value = null; ebene?.setzeAuswahl(null) })
 
 async function zeichnungNeu({ typ, punkte, stil: vorgabeStil = {} }) {
-    let stil = { ...vorgabeStil }
+    // Mit dem zuletzt benutzten Stil dieses Werkzeugs starten, nicht mit den Werksfarben.
+    let stil = { ...letzterStil(typ), ...vorgabeStil }
     if (typ === 'text') {
         const text = window.prompt(t('chart.textEingeben'), '')
         if (!text) return
@@ -752,6 +754,7 @@ function textBearbeiten(id) {
 
 function aendereAuswahl(patch) {
     if (!ausgewaehlt.value) return
+    if (patch.stil) merkeStil(ausgewaehlt.value.typ, patch.stil)
     aendere(props.panel.symbol, ausgewaehlt.value.id, patch)
     if (patch.versteckt) { auswahlId.value = null; ebene?.setzeAuswahl(null) }
 }
@@ -773,7 +776,7 @@ function abbrechen() {
 
 /** KI-Vorschläge gestrichelt einblenden (oder mit null entfernen). */
 function setzeKiVorschau(analyse) {
-    ebene?.setzeTemporaer(analyse && analyse.symbol === props.panel.symbol && analyse.interval === props.panel.interval ? kiVorschau(analyse) : [])
+    ebene?.setzeTemporaer(analyse && analyse.symbol === props.panel.symbol && analyse.interval === props.panel.interval ? kiVorschau(analyse, { profilStil: letzterStil('volprofil') }) : [])
 }
 
 function waehleZeichnung(id) {

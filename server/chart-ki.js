@@ -237,7 +237,7 @@ export function pruefeChartAuswahl(json, paket, { empfehlungen = false, auswahl 
         pruefeZahlen(grund, `linie ${id}`)
         const basis = { id, quelle: k.quelle, label: label || id, grund: wort(grund, 200), gewicht: gewichtVon(l?.gewicht) }
         if (trend) linien.push({ ...basis, art: 'trend', t1: k.t1, p1: k.p1, t2: k.t2, p2: k.p2 })
-        else linien.push({ ...basis, art: artNachLage(k.preis), t1: k.t1 ?? paket.vonT, p1: k.preis, t2: paket.bisT, p2: k.preis })
+        else linien.push({ ...basis, art: artNachLage(k.preis), t1: k.t1 ?? paket.vonT, p1: k.preis, t2: paket.bisT, p2: k.preis, ...(k.abschnitt ? { abschnitt: k.abschnitt, profilBis: k.t2 } : {}) })
     }
 
     const bedingungen = []
@@ -285,7 +285,7 @@ export function kandidatenKurz(paket) {
             preis: k.quelle === 'trend' ? null : k.preis, tief: k.tief ?? null, hoch: k.hoch ?? null,
             t1: k.t1 ?? null, p1: k.p1 ?? null, t2: k.t2 ?? null, p2: k.p2 ?? null, wertJetzt: k.wertJetzt ?? null,
             beruehrungen: k.beruehrungen ?? null, durchquerungen: k.durchquerungen ?? null, letzteT: k.letzteT ?? null,
-            abstandAtr: k.abstandAtr ?? null, rolle: k.rolle ?? null, deckt: k.deckt ?? null,
+            abstandAtr: k.abstandAtr ?? null, rolle: k.rolle ?? null, deckt: k.deckt ?? null, abschnitt: k.abschnitt ?? null,
         })),
     }
 }

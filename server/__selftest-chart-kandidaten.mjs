@@ -7,7 +7,7 @@
  * falsch gruppierte Marke oder eine Linie, durch die Kerzen wachsen, kann es
  * nur noch auswählen, nicht mehr korrigieren.
  */
-import { kandidatenNiveaus, waehleNiveaus, kandidatenTrendlinien, marktstruktur, baueKandidaten, kandidatenText, KAND } from './chart-kandidaten.js'
+import { profilAbschnitte, kandidatenNiveaus, waehleNiveaus, kandidatenTrendlinien, marktstruktur, baueKandidaten, kandidatenText, KAND } from './chart-kandidaten.js'
 
 let bestanden = 0
 let fehlgeschlagen = 0
@@ -119,6 +119,24 @@ console.log('\nPaket\n')
     check('Text bei 150 Kerzen unter 3500 Zeichen', text.length < 3500, String(text.length))
     check('Gegenprobe: keine 150 Zeitstempel im Text (nur die letzten 12 roh)', (text.match(/\d{4}-\d\d-\d\d \d\d:\d\dZ,/g) || []).length === KAND.ROH_KERZEN)
     check('zu wenige Kerzen → null statt halber Vermessung', baueKandidaten({ kerzen: k.slice(0, 20) }) === null)
+}
+
+console.log('\nProfil-Abschnitte\n')
+{
+    // Drei Bewegungen à 30 Kerzen: auf 100→129, ab 128→99, wieder auf 100→114.5 — ATR ≈ 1
+    const k = []
+    const kerze = (t, m) => ({ t: t * 3_600_000, o: m, h: m + 0.5, l: m - 0.5, c: m, v: 100 })
+    for (let i = 0; i < 30; i++) k.push(kerze(k.length, 100 + i))
+    for (let i = 0; i < 30; i++) k.push(kerze(k.length, 128 - i))
+    for (let i = 0; i < 30; i++) k.push(kerze(k.length, 100 + i * 0.5))
+    const ab = profilAbschnitte(k, 1, { schwelle: 5, minKerzen: 15, max: 3 })
+    check('Wendepunkte Hoch (29) und Tief (59) → drei Abschnitte', ab.length === 3 && ab[0].bis === 29 && ab[1].von === 29 && ab[1].bis === 59 && ab[2].bis === 89, JSON.stringify(ab))
+    const flach = Array.from({ length: 40 }, (_, i) => kerze(i, 100 + (i % 2)))
+    const fa = profilAbschnitte(flach, 1)
+    check('Gegenprobe: ohne Wendepunkt EIN Abschnitt über alles', fa.length === 1 && fa[0].von === 0 && fa[0].bis === 39, JSON.stringify(fa))
+    const p = baueKandidaten({ kerzen: k, interval: '1h' })
+    const v = p.kandidaten.filter((x) => x.quelle === 'volumenprofil')
+    check('je Abschnitt POC/VAH/VAL mit Zeitraum, A1 = jüngster', v.length === 9 && v[0].abschnitt === 'A1' && v[0].t2 === k[89].t && v[0].t1 === k[59].t, JSON.stringify(v.slice(0, 3)))
 }
 
 console.log(`\n${bestanden} bestanden, ${fehlgeschlagen} fehlgeschlagen`)

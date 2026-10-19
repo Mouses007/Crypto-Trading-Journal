@@ -13,7 +13,8 @@
  *   N…  waagerechte Niveaus: geclusterte Wendepunkte (Kette mit 0,5 ATR
  *       Nachbarabstand, höchstens 1 ATR breit), mit Berührungen, Reaktion in
  *       ATR, Durchquerungen ab der ersten Berührung und einer Güte
- *   V…  Volumenprofil des Bereichs (POC, VAH, VAL)
+ *   V…  Volumenprofile je Abschnitt (POC, VAH, VAL) — Abschnitte zwischen den
+ *       grossen Wendepunkten, wie man ein Fixed-Range-Profil von Hand setzt
  *   T…  ungebrochene Trendlinien beider Seiten (chart-trendlinien.js)
  *   D…  Niveaus der höheren Zeiteinheit (Abstand in DEREN ATR gemessen —
  *       mit der ATR der Chart-Zeiteinheit blieb auf ETH 1h nur eins übrig)
@@ -42,6 +43,40 @@ export const KAND = {
     HTF_ABSTAND_ATR_HTF: 3,
     DECKT_ATR: 0.2,            // V/D so nah an einem N → nicht doppelt aufführen
     ROH_KERZEN: 12,
+    PROFIL_SCHWELLE_ATR: 5,    // Wendepunkt für einen Profil-Abschnitt: Gegenbewegung ab so vielen ATR
+    PROFIL_MIN_KERZEN: 15,     // kürzere Abschnitte gehen im Nachbarn auf
+    PROFIL_MAX: 3,             // die jüngsten so vielen Abschnitte
+}
+
+/**
+ * Abschnitte für Volumenprofile: ZigZag über Hochs/Tiefs mit `schwelle` × ATR,
+ * die Strecken zwischen den Wendepunkten; zu kurze gehen im älteren Nachbarn
+ * auf, der jüngste reicht bis zur letzten Kerze. Liefert die jüngsten `max`,
+ * ältester zuerst: [{ von, bis }] als Kerzen-Indizes.
+ */
+export function profilAbschnitte(kerzen, A, { schwelle = KAND.PROFIL_SCHWELLE_ATR, minKerzen = KAND.PROFIL_MIN_KERZEN, max = KAND.PROFIL_MAX } = {}) {
+    const n = kerzen?.length || 0
+    if (n < minKerzen || !(A > 0)) return []
+    const wende = [0]
+    const S = schwelle * A
+    let richtung = 0, hI = 0, lI = 0
+    for (let i = 1; i < n; i++) {
+        const x = kerzen[i]
+        if (richtung >= 0 && x.h >= kerzen[hI].h) hI = i
+        if (richtung <= 0 && x.l <= kerzen[lI].l) lI = i
+        if (richtung >= 0 && hI < i && kerzen[hI].h - x.l >= S) { wende.push(hI); richtung = -1; lI = i }
+        else if (richtung <= 0 && lI < i && x.h - kerzen[lI].l >= S) { wende.push(lI); richtung = 1; hI = i }
+    }
+    const punkte = [...new Set([...wende, n - 1])].sort((a, b) => a - b)
+    let teile = []
+    for (let j = 1; j < punkte.length; j++) teile.push({ von: punkte[j - 1], bis: punkte[j] })
+    // zu kurze Abschnitte mit dem älteren Nachbarn verschmelzen (der erste mit dem nächsten)
+    for (let j = teile.length - 1; j >= 0 && teile.length > 1; j--) {
+        if (teile[j].bis - teile[j].von + 1 >= minKerzen) continue
+        if (j > 0) { teile[j - 1].bis = teile[j].bis; teile.splice(j, 1) } else { teile[1].von = teile[0].von; teile.splice(0, 1) }
+    }
+    teile = teile.filter((x) => x.bis - x.von + 1 >= minKerzen)
+    return teile.slice(-max)
 }
 
 /** Zeiteinheit → höhere Zeiteinheit als Kontext; null = keine. */
@@ -205,14 +240,22 @@ export function baueKandidaten({ kerzen, kerzenHtf = null, interval = null, inte
     niveaus.forEach((x, i) => kandidaten.push({ id: `N${i + 1}`, quelle: 'niveau', ...x, t1: x.ersteT }))
     const nListe = kandidaten.slice()
 
-    const vp = volumenprofil(kerzen, { zeilen: 48 })
-    if (vp) {
-        let v = 1
+    // Je Abschnitt ein Profil (jüngster = A1); V-IDs laufen über alle Abschnitte.
+    let v = 1
+    // Ohne grosse Wendepunkte (ruhiger Bereich): ein Profil über alles.
+    const gefunden = profilAbschnitte(kerzen, A)
+    const abschnitte = (gefunden.length ? gefunden : [{ von: 0, bis: n - 1 }]).reverse()
+    abschnitte.forEach((ab, j) => {
+        const vp = volumenprofil(kerzen.slice(ab.von, ab.bis + 1), { zeilen: 48 })
+        if (!vp) return
         for (const [name, preis] of [['POC', vp.poc], ['VAH', vp.vah], ['VAL', vp.val]]) {
             const deckt = nahAnN(preis, nListe)
-            kandidaten.push({ id: `V${v++}`, quelle: 'volumenprofil', name, preis, tief: preis - KAND.BAND_MIN_ATR * A, hoch: preis + KAND.BAND_MIN_ATR * A, t1: vonT, abstandAtr: (preis - kurs) / A, deckt: deckt?.id || null })
+            kandidaten.push({
+                id: `V${v++}`, quelle: 'volumenprofil', name, abschnitt: `A${j + 1}`, preis, tief: preis - KAND.BAND_MIN_ATR * A, hoch: preis + KAND.BAND_MIN_ATR * A,
+                t1: kerzen[ab.von].t, t2: kerzen[ab.bis].t, abstandAtr: (preis - kurs) / A, deckt: deckt?.id || null,
+            })
         }
-    }
+    })
 
     kandidatenTrendlinien(kerzen, A).forEach((x, i) => kandidaten.push({ id: `T${i + 1}`, quelle: 'trend', ...x }))
 
@@ -266,7 +309,13 @@ export function kandidatenText(paket) {
         for (const x of n) z.push(`${x.id} | ${zahl(x.preis)} | ${zahl(x.tief)}–${zahl(x.hoch)} | ${x.beruehrungen} (${x.hochs}/${x.tiefs}) | ${zeit(x.letzteT)} | ${x.reaktionMaxAtr.toFixed(1)} | ${x.durchquerungen} | ${atrText(x.abstandAtr)}${x.extrem ? ` | ${x.extrem === 'hoch' ? 'Hoch' : 'Tief'} des Bereichs` : ''}${x.rolle === 'wechsel' ? ' | Drehpunkt (mal Unterstützung, mal Widerstand)' : ''}`)
     }
     const v = paket.kandidaten.filter((k) => k.quelle === 'volumenprofil')
-    if (v.length) z.push('', 'VOLUMENPROFIL des Bereichs: ' + v.map((x) => `${x.id} ${x.name} ${zahl(x.preis)} (${atrText(x.abstandAtr)} ATR${x.deckt ? `, deckt sich mit ${x.deckt}` : ''})`).join(' | '))
+    if (v.length) {
+        z.push('', 'VOLUMENPROFILE je Abschnitt zwischen den grossen Wendepunkten (A1 = der jüngste, reicht bis jetzt):')
+        for (const ab of [...new Set(v.map((x) => x.abschnitt))]) {
+            const xs = v.filter((x) => x.abschnitt === ab)
+            z.push(`${ab} ${zeit(xs[0].t1)} → ${zeit(xs[0].t2)}: ` + xs.map((x) => `${x.id} ${x.name} ${zahl(x.preis)} (${atrText(x.abstandAtr)} ATR${x.deckt ? `, deckt sich mit ${x.deckt}` : ''})`).join(' | '))
+        }
+    }
     const t = paket.kandidaten.filter((k) => k.quelle === 'trend')
     if (t.length) {
         z.push('', 'TRENDLINIEN — alle an den Kerzen geprüft, ungebrochen (id | Seite | Anker 1 → Anker 2 | Berührungen | Wert jetzt | Abstand in ATR):')

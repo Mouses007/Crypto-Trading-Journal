@@ -35,7 +35,7 @@ console.log('\nEingabe\n')
         hebelzonen: { oben: [{ preis: 110, usd: 12e6 }], unten: [{ preis: 95, usd: 8e6 }] },
         trades: [{ richtung: 'long', einstieg: { t: T0 + 5 * H, p: 100.4 }, ausstieg: null }],
     })
-    check('Kandidaten mit IDs statt Roh-Kerzen', /^N1 \|/m.test(e) && /VOLUMENPROFIL des Bereichs: V1 POC/.test(e))
+    check('Kandidaten mit IDs statt Roh-Kerzen', /^N1 \|/m.test(e) && /VOLUMENPROFILE je Abschnitt/.test(e) && /^A1 .*V1 POC/m.test(e))
     check('nur die letzten 12 Kerzen roh, nicht alle 60', e.split('\n').filter((z) => /^\d{4}-\d\d-\d\d \d\d:\d\dZ,/.test(z)).length === 12)
     check('eigene Linie als U-Bezug mit Beschriftung, Fibonacci weggelassen', /U1 \| horizontale bei 102 „Wochenhoch"/.test(e) && !/fib/.test(e))
     check('Hebelzonen als Modell gekennzeichnet', e.includes('Modell') && e.includes('~12 Mio USD Shorts'))

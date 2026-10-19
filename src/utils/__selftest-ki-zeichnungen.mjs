@@ -67,8 +67,15 @@ console.log('\nVolumenprofil\n')
     }
     const v = kiVorschau(a)
     const profile = v.filter((z) => z.typ === 'volprofil')
-    check('V-Marken → genau EIN Profil über den Bereich', profile.length === 1 && profile[0].punkte[0].t === 1 && profile[0].punkte[1].t === 99)
-    check('einfarbig blau, ohne POC/VAH/VAL-Linien', profile[0].stil.farbe === '#2962ff' && profile[0].stil.einfarbig === true && profile[0].stil.marken === false)
+    check('alte Analyse ohne Abschnitte → EIN Profil über den Bereich', profile.length === 1 && profile[0].punkte[0].t === 1 && profile[0].punkte[1].t === 99)
+    check('einfarbig blau mit POC/VAH/VAL wie das Werkzeug', profile[0].stil.farbe === '#29b6f6' && profile[0].stil.einfarbig === true && profile[0].stil.marken === true)
+    // Neu: V-Marken tragen ihren Abschnitt → ein Profil je Abschnitt, nur über dessen Zeit
+    const b = { ...a, auswahl: { kandidaten: [
+        { id: 'V1', abschnitt: 'A1', t1: 60, t2: 99 }, { id: 'V2', abschnitt: 'A1', t1: 60, t2: 99 }, { id: 'V3', abschnitt: 'A2', t1: 20, t2: 60 },
+    ] } }
+    const pb = kiVorschau(b, { profilStil: { farbe: '#ffeb3b', zeilen: 120 } }).filter((z) => z.typ === 'volprofil')
+    check('zwei Abschnitte gewählt → zwei Profile über ihre Zeit', pb.length === 2 && pb.some((z) => z.punkte[0].t === 60 && z.punkte[1].t === 99) && pb.some((z) => z.punkte[0].t === 20 && z.punkte[1].t === 60), JSON.stringify(pb.map((z) => z.punkte)))
+    check('Stil = zuletzt benutzter des Profil-Werkzeugs', pb[0].stil.farbe === '#ffeb3b' && pb[0].stil.zeilen === 120 && pb[0].stil.einfarbig === true)
     check('keine V-Linie und keine V-Zone mehr einzeln', !v.some((z) => /V\d/.test(z.stil?.text || '')) && v.length === 2, JSON.stringify(v.map((z) => z.typ)))
     check('Gegenprobe: ohne V kein Profil', !hatProfil({ linien: [{ id: 'N1' }], zonen: [] }))
 }

@@ -52,34 +52,44 @@ export function kandidatenVorschau(analyse) {
 }
 
 /*
- * Volumenprofil: Wählt die KI eine V-Marke (POC/VAH/VAL, als Linie oder Zone),
- * erscheint EIN Profil über den analysierten Bereich — einfarbig blau, ohne
- * die drei Marken als Linien (die las man vorher als rote/grüne Niveaus, und
- * das Profil selbst, auf das sie sich beziehen, fehlte).
+ * Volumenprofil: Die V-Marken (POC/VAH/VAL) gehören je zu einem ABSCHNITT
+ * zwischen zwei grossen Wendepunkten (server/chart-kandidaten.js). Wählt die
+ * KI eine davon, erscheint über diesem Abschnitt ein Fixed-Range-Profil wie
+ * vom eigenen Profil-Werkzeug — im zuletzt benutzten Stil des Werkzeugs
+ * (`basis`), sonst einfarbig blau mit POC/VAH/VAL. Die Marken selbst nicht
+ * noch einmal als eigene Linien. Analysen ohne Abschnitte (älter als
+ * 19.10.2026): ein Profil über den ganzen Bereich.
  */
+export const PROFIL_STIL = { farbe: '#29b6f6', zeilen: 96, rechts: false, einfarbig: true, marken: true }
 const istV = (id) => /^V\d+$/.test(String(id || ''))
 export const istProfilLinie = (l) => l?.quelle === 'volumenprofil' || istV(l?.id)
 export const istProfilZone = (z) => (z?.ids || []).some(istV)
 export function hatProfil(analyse) {
     return (analyse?.linien || []).some(istProfilLinie) || (analyse?.zonen || []).some(istProfilZone)
 }
-export function profilAlsZeichnung(analyse) {
-    return {
-        typ: 'volprofil',
-        punkte: [{ t: analyse.kerzenVon, p: 0 }, { t: analyse.kerzenBis, p: 0 }],
-        stil: { farbe: '#2962ff', zeilen: 48, rechts: false, einfarbig: true, marken: false },
+export function profileAlsZeichnungen(analyse, basis = {}) {
+    const stil = { ...PROFIL_STIL, ...basis }
+    const kand = new Map((analyse?.auswahl?.kandidaten || []).map((k) => [k.id, k]))
+    const ids = [...(analyse?.linien || []).filter(istProfilLinie).map((l) => l.id), ...(analyse?.zonen || []).flatMap((z) => (z.ids || []).filter(istV))]
+    const bereiche = new Map()
+    for (const id of ids) {
+        const k = kand.get(id)
+        const t1 = k?.t1, t2 = k?.t2
+        const schluessel = k?.abschnitt && t1 && t2 ? k.abschnitt : 'ganz'
+        if (!bereiche.has(schluessel)) bereiche.set(schluessel, schluessel === 'ganz' ? [analyse.kerzenVon, analyse.kerzenBis] : [t1, t2])
     }
+    return [...bereiche.values()].map(([t1, t2]) => ({ typ: 'volprofil', punkte: [{ t: t1, p: 0 }, { t: t2, p: 0 }], stil: { ...stil } }))
 }
 
 /** Alles aus einer Analyse als Vorschau (negative ids: nie verwechselbar mit gespeicherten). */
-export function kiVorschau(analyse) {
+export function kiVorschau(analyse, { profilStil = {} } = {}) {
     if (!analyse) return []
     const ab = analyse.kerzenVon
     const bis = analyse.kerzenBis
     return [
         ...(analyse.linien || []).map((l, i) => (istProfilLinie(l) ? null : { id: -100 - i, ...linieAlsZeichnung(l) })).filter(Boolean),
         ...(analyse.zonen || []).map((z, i) => (istProfilZone(z) ? null : { id: -200 - i, ...zoneAlsZeichnung(z, ab, bis) })).filter(Boolean),
-        ...(hatProfil(analyse) ? [{ id: -150, ...profilAlsZeichnung(analyse) }] : []),
+        ...(hatProfil(analyse) ? profileAlsZeichnungen(analyse, profilStil).map((z, j) => ({ id: -150 - j, ...z })) : []),
         ...(analyse._alle ? kandidatenVorschau(analyse) : []),
     ]
 }

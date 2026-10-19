@@ -9,10 +9,11 @@
  * Erzeugt wird nur auf Knopfdruck (kostet einen KI-Aufruf); beim Öffnen wird
  * die letzte Analyse für Symbol und Zeiteinheit gelesen, falls es eine gibt.
  */
+import { letzterStil } from '../../stores/zeichenStil.js'
 import { ref, watch, computed } from 'vue'
 import { useI18n } from 'vue-i18n'
 import axios from 'axios'
-import { linieAlsZeichnung, zoneAlsZeichnung, profilAlsZeichnung, istProfilLinie, istProfilZone } from '../../utils/chart/kiZeichnungen.js'
+import { linieAlsZeichnung, zoneAlsZeichnung, profileAlsZeichnungen, istProfilLinie, istProfilZone } from '../../utils/chart/kiZeichnungen.js'
 import { legeAn } from '../../stores/chartZeichnungen.js'
 import KiChat from './KiChat.vue'
 
@@ -133,8 +134,10 @@ async function uebernimm(art, i) {
     const profil = art === 'linie' ? istProfilLinie(a.linien[i]) : istProfilZone(a.zonen[i])
     if (profil) {
         if (!uebernommen.value.has('profil')) {
-            const z = await legeAn({ symbol: a.symbol || props.panel.symbol, ...profilAlsZeichnung(a), sichtbarAuf: null, gesperrt: false, versteckt: false })
-            if (!z) return
+            for (const roh of profileAlsZeichnungen(a, letzterStil('volprofil'))) {
+                const z = await legeAn({ symbol: a.symbol || props.panel.symbol, ...roh, sichtbarAuf: null, gesperrt: false, versteckt: false })
+                if (!z) return
+            }
         }
         const v = [...a.linien.map((l, j) => (istProfilLinie(l) ? `linie${j}` : null)), ...a.zonen.map((x, j) => (istProfilZone(x) ? `zone${j}` : null))].filter(Boolean)
         uebernommen.value = new Set([...uebernommen.value, 'profil', ...v])
