@@ -159,9 +159,7 @@ export class JournalEbene {
             for (const a of ausgeloest) {
                 const x = this.zuX(a.t), y = this.zuY(a.preis)
                 if (x == null || y == null) continue
-                const f = a.art === 'SL' ? ROT : GRUEN
-                strich(x - 4, y - 4, x + 4, y + 4, f, [])
-                strich(x - 4, y + 4, x + 4, y - 4, f, [])
+                this.zeichneAusgeloest(ctx, a, x, y)
             }
         } else {
             if (tr.anfangsStop) strich(ex, this.zuY(tr.anfangsStop), xEnde, this.zuY(tr.anfangsStop), SL_F, [4, 3])
@@ -231,8 +229,18 @@ export class JournalEbene {
         // Rechts endet die Box am Bildrand — sonst stünden Fläche und Schilder halb ausserhalb.
         const b = Math.max(Math.min(xj, breite - 2) - ex, 12)
         const yz = this.zuY(pos.tp), ys = this.zuY(pos.sl)
+        // Stop auf Breakeven oder im Gewinn: kein Risiko mehr — keine rote Verlustfläche,
+        // sondern eine leise grüne „gesichert"-Fläche bis zum Stop.
+        const gesichert = pos.sl > 0 && (long ? pos.sl >= pos.einstieg : pos.sl <= pos.einstieg)
         if (yz != null) { ctx.fillStyle = 'rgba(38,166,154,0.18)'; ctx.fillRect(ex, Math.min(ey, yz), b, Math.abs(yz - ey)) }
-        if (ys != null) { ctx.fillStyle = 'rgba(255,105,96,0.18)'; ctx.fillRect(ex, Math.min(ey, ys), b, Math.abs(ys - ey)) }
+        if (ys != null) {
+            ctx.fillStyle = gesichert ? 'rgba(38,166,154,0.10)' : 'rgba(255,105,96,0.18)'
+            ctx.fillRect(ex, Math.min(ey, ys), b, Math.abs(ys - ey))
+            if (gesichert) {
+                ctx.strokeStyle = 'rgba(38,166,154,0.9)'; ctx.setLineDash([5, 3])
+                ctx.beginPath(); ctx.moveTo(ex, ys); ctx.lineTo(ex + b, ys); ctx.stroke(); ctx.setLineDash([])
+            }
+        }
         ctx.strokeStyle = '#e0e0e0'; ctx.lineWidth = 1
         ctx.beginPath(); ctx.moveTo(ex, ey); ctx.lineTo(ex + b, ey); ctx.stroke()
 
@@ -249,12 +257,11 @@ export class JournalEbene {
         for (const a of ausgeloest) {
             const x = this.zuX(a.t), y = this.zuY(a.preis)
             if (x == null || y == null) continue
-            ctx.strokeStyle = a.art === 'SL' ? ROT : GRUEN
-            ctx.beginPath(); ctx.moveTo(x - 4, y - 4); ctx.lineTo(x + 4, y + 4); ctx.moveTo(x - 4, y + 4); ctx.lineTo(x + 4, y - 4); ctx.stroke()
+            this.zeichneAusgeloest(ctx, a, x, y)
         }
 
         // Beschriftung wie beim Werkzeug: Richtung · R (Ziel gegen Stop), Teil-Ziel mit Anteil.
-        const rr = pos.tp && pos.sl && Math.abs(pos.einstieg - pos.sl) > 0 ? Math.abs(pos.tp - pos.einstieg) / Math.abs(pos.einstieg - pos.sl) : null
+        const rr = !gesichert && pos.tp && pos.sl && Math.abs(pos.einstieg - pos.sl) > 0 ? Math.abs(pos.tp - pos.einstieg) / Math.abs(pos.einstieg - pos.sl) : null
         // Schilder in die Box; ist rechts zu wenig Platz, links davor (rechtsbündig).
         const schild = (text, x, y, farbe) => {
             const w = ctx.measureText(text).width
@@ -263,12 +270,12 @@ export class JournalEbene {
             ctx.fillStyle = farbe; ctx.fillText(text, x + 1, y)
         }
         const pct = (p) => { const v = ((p - pos.einstieg) / pos.einstieg) * 100; return `${v >= 0 ? '+' : ''}${v.toFixed(2)} %` }
-        schild(`${long ? 'Long' : 'Short'}${rr != null ? ` · ${rr.toFixed(2)} R` : ''}`, ex + 4, ey - 4, '#e0e0e0')
+        schild(`${long ? 'Long' : 'Short'}${rr != null ? ` · ${rr.toFixed(2)} R` : gesichert ? ' · ohne Risiko' : ''}`, ex + 4, ey + (gesichert && ys != null && ys < ey ? 13 : -4), '#e0e0e0')
         if (yz != null) {
             const anteil = letzteTp && letzteTp.menge > 0 && letzteTp.posMenge > 0 && letzteTp.menge < letzteTp.posMenge * 0.999 ? ` · ${Math.round((letzteTp.menge / letzteTp.posMenge) * 100)} % der Position` : ''
             schild(`Ziel ${this.formatPreis(pos.tp)} (${pct(pos.tp)})${anteil}`, ex + 4, yz + (yz < ey ? 13 : -4), GRUEN)
         }
-        if (ys != null) schild(`Stop ${this.formatPreis(pos.sl)} (${pct(pos.sl)})`, ex + 4, ys + (ys < ey ? 13 : -4), ROT)
+        if (ys != null) schild(`Stop ${this.formatPreis(pos.sl)} (${pct(pos.sl)})${gesichert ? (Math.abs(pos.sl - pos.einstieg) / pos.einstieg < 0.0005 ? ' · Breakeven' : ' · im Gewinn') : ''}`, ex + 4, ys + (ys < ey ? 13 : -4), gesichert ? GRUEN : ROT)
 
         // Einstieg: Dreieck in Handelsrichtung.
         const g = 6
@@ -278,5 +285,23 @@ export class JournalEbene {
         else { ctx.moveTo(ex, ey + g); ctx.lineTo(ex - g, ey - g * 0.6); ctx.lineTo(ex + g, ey - g * 0.6) }
         ctx.closePath(); ctx.fill()
         ctx.strokeStyle = '#131722'; ctx.stroke()
+    }
+
+    /** Ausgelöste Marke: Ziel ✓ grün, Stop ✕ rot — dazu bei einem Teil-Ziel sein Anteil. */
+    zeichneAusgeloest(ctx, a, x, y) {
+        ctx.save()
+        ctx.strokeStyle = a.art === 'SL' ? ROT : GRUEN
+        ctx.lineWidth = 1.8
+        ctx.setLineDash([])
+        ctx.beginPath()
+        if (a.art === 'SL') { ctx.moveTo(x - 4, y - 4); ctx.lineTo(x + 4, y + 4); ctx.moveTo(x - 4, y + 4); ctx.lineTo(x + 4, y - 4) }
+        else { ctx.moveTo(x - 4, y); ctx.lineTo(x - 1, y + 3); ctx.lineTo(x + 5, y - 4) }
+        ctx.stroke()
+        if (a.anteil != null) {
+            ctx.font = SCHRIFT
+            ctx.fillStyle = a.art === 'SL' ? ROT : GRUEN
+            ctx.fillText(`${Math.round(a.anteil * 100)} %`, x + 8, y + 4)
+        }
+        ctx.restore()
     }
 }
