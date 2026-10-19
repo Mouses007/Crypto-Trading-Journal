@@ -354,19 +354,30 @@ function saveTpSlHistory(positionId, history) {
     }
 }
 
-function wasTpSlTriggered(positionId, type, oldPrice) {
-    // Check if there's a recent reduceOnly fill near the SL/TP price
+/**
+ * Ausgelöst oder von Hand entfernt? Zwei Belege, einer reicht:
+ *  - ein reduzierender Fill nahe am Preis SEIT die Marke zuletzt gesehen wurde
+ *    (bis 19.10.2026 nur „in den letzten 5 Minuten" — ein TP, der über Nacht
+ *    bei geschlossener Seite auslöste, stand am Morgen als „entfernt" da);
+ *  - die Position ist seitdem um die Menge der Marke geschrumpft (bzw. bei
+ *    einer Marke über die ganze Position: überhaupt geschrumpft).
+ */
+function wasTpSlTriggered(positionId, type, oldPrice, letzter = null, posQtyJetzt = 0) {
+    const seit = (letzter?.time || 0) - 60_000
     const fillData = getFillsForPosition(positionId)
-    if (!fillData.trades || fillData.trades.length === 0) return false
-    const fiveMinAgo = Date.now() - 5 * 60 * 1000
-    return fillData.trades.some(f => {
+    const perFill = (fillData.trades || []).some(f => {
         if (!f.reduceOnly) return false
         const fillTime = parseInt(f.ctime || 0)
-        if (fillTime < fiveMinAgo) return false
+        if (fillTime < seit) return false
         const fillPrice = parseFloat(f.price || 0)
         // Price within 0.5% of target = triggered
         return Math.abs(fillPrice - oldPrice) / oldPrice < 0.005
     })
+    if (perFill) return true
+    const vorher = parseFloat(letzter?.posQty || 0), jetzt = parseFloat(posQtyJetzt || 0), menge = parseFloat(letzter?.qty || 0)
+    if (!(vorher > 0) || !(jetzt < vorher * 0.999)) return false
+    const weg = vorher - jetzt
+    return menge > 0 && menge < vorher * 0.999 ? Math.abs(weg - menge) <= menge * 0.02 : true
 }
 
 function trackTpSlChanges(positionId, newSl, newTp, slQty = 0, tpQty = 0, posQty = 0, side = '') {
@@ -427,7 +438,7 @@ function trackTpSlChanges(positionId, newSl, newTp, slQty = 0, tpQty = 0, posQty
         if (lastSlInfo.val === null && newSl !== null) {
             changed = safePush({ time: now, type: 'SL', oldVal: null, newVal: newSl, qty: slQty || 0, posQty, action: 'set' }) || changed
         } else if (lastSlInfo.val !== null && newSl === null) {
-            const triggered = wasTpSlTriggered(positionId, 'SL', lastSlInfo.val)
+            const triggered = wasTpSlTriggered(positionId, 'SL', lastSlInfo.val, lastSlInfo.entry, posQty)
             changed = safePush({ time: now, type: 'SL', oldVal: lastSlInfo.val, newVal: null, qty: 0, posQty, action: triggered ? 'triggered' : 'removed' }) || changed
         } else if (newSl !== null) {
             changed = safePush({ time: now, type: 'SL', oldVal: lastSlInfo.val, newVal: newSl, qty: slQty || 0, posQty, action: 'moved' }) || changed
@@ -439,7 +450,7 @@ function trackTpSlChanges(positionId, newSl, newTp, slQty = 0, tpQty = 0, posQty
         if (lastTpInfo.val === null && newTp !== null) {
             changed = safePush({ time: now, type: 'TP', oldVal: null, newVal: newTp, qty: tpQty || 0, posQty, action: 'set' }) || changed
         } else if (lastTpInfo.val !== null && newTp === null) {
-            const triggered = wasTpSlTriggered(positionId, 'TP', lastTpInfo.val)
+            const triggered = wasTpSlTriggered(positionId, 'TP', lastTpInfo.val, lastTpInfo.entry, posQty)
             changed = safePush({ time: now, type: 'TP', oldVal: lastTpInfo.val, newVal: null, qty: 0, posQty, action: triggered ? 'triggered' : 'removed' }) || changed
         } else if (newTp !== null) {
             changed = safePush({ time: now, type: 'TP', oldVal: lastTpInfo.val, newVal: newTp, qty: tpQty || 0, posQty, action: 'moved' }) || changed

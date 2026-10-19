@@ -64,5 +64,18 @@ const H = 3_600_000
     check('leerer Verlauf / ungültiges Fenster → nichts', tpslStufen([], 0, H).stufen.length === 0 && tpslStufen([{ t: 0, art: 'SL', aktion: 'set', wert: 1 }], H, H).stufen.length === 0)
 }
 
+{
+    // 19.10.2026, BTCUSDT: Teil-TP 0.0229 von 0.0302 löst über Nacht aus, die Seite war zu → „removed" mit posQty 0.0073.
+    const v = [
+        { t: 0, art: 'SL', aktion: 'set', wert: 80350, menge: 0.0302, posMenge: 0.0302 },
+        { t: H, art: 'TP', aktion: 'set', wert: 82248.9, menge: 0.0229, posMenge: 0.0302 },
+        { t: 9 * H, art: 'TP', aktion: 'removed', alt: 82248.9, wert: null, menge: 0, posMenge: 0.0073 },
+    ]
+    const { ausgeloest } = tpslStufen(v, 0, 12 * H)
+    check('removed + Position um die TP-Menge kleiner → als ausgelöst gezählt', ausgeloest.length === 1 && ausgeloest[0].art === 'TP' && ausgeloest[0].preis === 82248.9, JSON.stringify(ausgeloest))
+    const w = [v[0], v[1], { ...v[2], posMenge: 0.0302 }]
+    check('Gegenprobe: removed ohne Mengenänderung bleibt entfernt', tpslStufen(w, 0, 12 * H).ausgeloest.length === 0)
+}
+
 console.log(`\n${bestanden} bestanden, ${fehlgeschlagen} fehlgeschlagen`)
 if (fehlgeschlagen) process.exit(1)
