@@ -74,9 +74,21 @@ read `cannot_sell_all`, a field GoPlus v1 does not have at all, and an empty
 re-fetches and reports **disappeared** fields; it is deliberately not part of
 `npm run test:self`, because that must work without network.
 
-Not covered: CSV import (`brokers.js`/`addTrades.js`), journal P&L
-(`src/utils/trades.js`), the REST CRUD layer, and anything rendered in the
-frontend.
+`src/utils/__selftest-journal.mjs` is a **golden master** of the journal core,
+the safety net for replacing the TradeNote-derived code (`LIZENZ-PLAN.md`): a
+synthetic, seeded data set runs through the real `useQuickApiImport`
+(Bitunix/Bitget/Pionex answers), then filter → totals → groups → profit
+analysis → chart data → calendar, and the result is compared against
+`src/utils/fixtures/journal-golden.json`. It pins what the code DOES, not what
+is right — a deliberate change is re-frozen with
+`JOURNAL_GOLDEN_SCHREIBEN=1 node src/utils/__selftest-journal.mjs` and named in
+the commit. DB, axios, ECharts, account balance and i18n are swapped by a load
+hook (`__journal-attrappen.mjs`); `process.env.TZ` is pinned because the
+grouping uses the process time zone. Integers (timestamps, counts) compare
+exactly, floats at 1e-9 relative.
+
+Not covered: CSV import (`brokers.js`/`addTrades.js`), the MFE/OHLCV paths of
+`addTrades.js`, the REST CRUD layer, and anything rendered in the frontend.
 
 ## Architecture
 
