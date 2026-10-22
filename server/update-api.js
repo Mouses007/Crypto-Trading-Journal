@@ -16,7 +16,11 @@ import { fileURLToPath } from 'url'
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = path.dirname(__filename)
 
-const GITHUB_REPO = 'Mouses007/Crypto-Trading-Journal'
+// 3.15.0 — Brücke: das Projekt heisst jetzt AutarkTrade und lebt in einem neuen Repo.
+// Diese Fassung schaut dort nach Updates und stellt `origin` vor dem Holen um, damit
+// der nächste Klick auf „Update" AutarkTrade 4.x installiert (Datenbank wird übernommen).
+const GITHUB_REPO = 'Mouses007/AutarkTrade'
+const NEUES_REPO_URL = 'https://github.com/Mouses007/AutarkTrade.git'
 const PROJECT_ROOT = path.resolve(__dirname, '..')
 const IS_WINDOWS = os.platform() === 'win32'
 const IS_DOCKER = existsSync('/.dockerenv')
@@ -432,8 +436,8 @@ export function setupUpdateRoutes(app) {
                 return res.status(400).json({
                     ok: false,
                     error: 'Git-Repository nicht gefunden. Bitte fuehre im Installationsordner aus:\n' +
-                        'git init && git remote add origin https://github.com/Mouses007/Crypto-Trading-Journal.git && git fetch origin master\n' +
-                        'Oder installiere neu mit: git clone https://github.com/Mouses007/Crypto-Trading-Journal.git'
+                        'git init && git remote add origin https://github.com/Mouses007/AutarkTrade.git && git fetch origin master\n' +
+                        'Oder installiere neu mit: git clone https://github.com/Mouses007/AutarkTrade.git'
                 })
             }
 
@@ -453,6 +457,14 @@ export function setupUpdateRoutes(app) {
                 preUpdateCommit = null
                 steps.push({ step: 'save rollback point', output: 'Kein bisheriger Commit (frische Installation) — Rollback nicht verfügbar' })
             }
+
+            // 0. Brücke: origin auf das neue Repo stellen (fehlt origin, anlegen)
+            try {
+                execSync(`git remote set-url origin ${NEUES_REPO_URL}`, { cwd: PROJECT_ROOT, encoding: 'utf8', timeout: 10000 })
+            } catch {
+                execSync(`git remote add origin ${NEUES_REPO_URL}`, { cwd: PROJECT_ROOT, encoding: 'utf8', timeout: 10000 })
+            }
+            steps.push({ step: 'origin', output: NEUES_REPO_URL })
 
             // 1. git fetch + reset statt pull (funktioniert auch ohne HEAD/Commits)
             const fetchOutput = execSync('git fetch origin master', {
@@ -594,7 +606,7 @@ export function setupUpdateRoutes(app) {
         // Pruefen ob Git-Repository vorhanden ist
         if (!existsSync(path.join(PROJECT_ROOT, '.git'))) {
             console.log(' -> Kein Git-Repository gefunden — Auto-Updates nicht verfuegbar')
-            console.log('    Tipp: git init && git remote add origin https://github.com/Mouses007/Crypto-Trading-Journal.git && git fetch origin master')
+            console.log('    Tipp: git init && git remote add origin https://github.com/Mouses007/AutarkTrade.git && git fetch origin master')
             return
         }
 

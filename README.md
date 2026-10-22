@@ -1,4 +1,9 @@
-# Crypto Trading Journal
+# Crypto Trading Journal → AutarkTrade
+
+> **This project continues as [AutarkTrade](https://github.com/Mouses007/AutarkTrade)** (AGPL-3.0) — rebuilt, redesigned, with a chart workspace, alerts and much more.
+> **Updating (git install):** version 3.15.0 is a bridge. Click "Update" once to get 3.15.0, then once more to get AutarkTrade 4.x — your database is taken over automatically. Make a backup first.
+> **Docker:** `mouses007/trading-journal:latest` now points to the AutarkTrade image. New installs: `ghcr.io/mouses007/autarktrade:latest`, see the [AutarkTrade Docker guide](https://github.com/Mouses007/AutarkTrade/blob/master/DOCKER.md).
+> This repository is no longer developed.
 
 A **free**, self-hosted, open-source trading journal for **crypto futures** on **Bitunix**, **Bitget** and **Pionex**.
 Runs locally or via Docker — no cloud, no account, no subscription.
